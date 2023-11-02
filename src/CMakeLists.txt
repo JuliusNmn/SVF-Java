@@ -14,9 +14,17 @@ find_package(JNI)
 if (JNI_FOUND)
     message (STATUS "JNI_INCLUDE_DIRS=${JNI_INCLUDE_DIRS}")
     message (STATUS "JNI_LIBRARIES=${JNI_LIBRARIES}")
+else()
+    message (STATUS "Could not find JNI includes. Is JAVA_HOME set?")
 endif()
 include_directories(${JNI_INCLUDE_DIRS})
 
+execute_process(COMMAND "javac" "-h" "." "main/java/svfjava/SVFJava.java" 
+WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+RESULT_VARIABLE res
+OUTPUT_VARIABLE out)
+
+message(STATUS " ${CMAKE_CURRENT_SOURCE_DIR} ${res} ${out}")
 add_executable(svf-ex ${SOURCES})
 target_compile_options(svf-ex PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-g>
