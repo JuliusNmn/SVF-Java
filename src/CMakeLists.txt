@@ -2,9 +2,29 @@ llvm_map_components_to_libnames(llvm_libs bitwriter core ipo irreader instcombin
 file (GLOB SOURCES
    *.cpp
 )
-add_executable(svf-ex ${SOURCES})
 
+
+
+set(JAVA_AWT_LIBRARY NotNeeded)
+set(JAVA_JVM_LIBRARY NotNeeded)
+set(JAVA_AWT_INCLUDE_PATH NotNeeded)
+
+find_package(JNI)
+
+if (JNI_FOUND)
+    message (STATUS "JNI_INCLUDE_DIRS=${JNI_INCLUDE_DIRS}")
+    message (STATUS "JNI_LIBRARIES=${JNI_LIBRARIES}")
+endif()
+include_directories(${JNI_INCLUDE_DIRS})
+
+add_executable(svf-ex ${SOURCES})
+target_compile_options(svf-ex PRIVATE
+    $<$<CXX_COMPILER_ID:Clang>:-g>
+    )
+add_library(svf-lib SHARED ${SOURCES})
 target_link_libraries(svf-ex ${SVF_LIB} ${llvm_libs})
 target_link_libraries(svf-ex ${Z3_LIBRARIES})
+target_link_libraries(svf-lib ${SVF_LIB} ${llvm_libs})
+target_link_libraries(svf-lib ${Z3_LIBRARIES})
 set_target_properties( svf-ex PROPERTIES
                        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )

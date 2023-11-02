@@ -31,6 +31,8 @@
 #include "WPA/Andersen.h"
 #include "SVF-LLVM/SVFIRBuilder.h"
 #include "Util/Options.h"
+#include "jni.h"
+#include "svfjava_SVFJava.h"
 
 using namespace llvm;
 using namespace std;
@@ -53,12 +55,11 @@ SVF::AliasResult aliasQuery(PointerAnalysis* pta, Value* v1, Value* v2)
 /*!
  * An example to print points-to set of an LLVM value
  */
-std::string printPts(PointerAnalysis* pta, Value* val)
+std::string printPts(PointerAnalysis* pta, SVFValue* svfval)
 {
 
     std::string str;
     raw_string_ostream rawstr(str);
-    SVFValue* svfval = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
 
     NodeID pNodeId = pta->getPAG()->getValueNode(svfval);
     const PointsTo& pts = pta->getPts(pNodeId);
@@ -76,7 +77,11 @@ std::string printPts(PointerAnalysis* pta, Value* val)
     return rawstr.str();
 
 }
-
+std::string printPts(PointerAnalysis* pta, Value* val)
+{
+    SVFValue* svfval = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
+    return printPts(pta, svfval);
+}
 
 /*!
  * An example to query/collect all successor nodes from a ICFGNode (iNode) along control-flow graph (ICFG)
@@ -149,6 +154,8 @@ void traverseOnVFG(const SVFG* vfg, Value* val)
     }
 }
 
+
+
 int main(int argc, char ** argv)
 {
 
@@ -172,19 +179,26 @@ int main(int argc, char ** argv)
 
     /// Create Andersen's pointer analysis
     Andersen* ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
-
+`
     /// Query aliases
     /// aliasQuery(ander,value1,value2);
-
     /// Print points-to information
     /// printPts(ander, value1);
 
+    for (const SVFFunction* func : *svfModule) {
+        cout << "function " <<  func->getName() << " argcount: " << func->arg_size() << endl;
+        for (u32_t i = 0; i < func->arg_size(); i++) {
+           const  SVFArgument* arg = func->getArg(i);
+           SVFValue* val = (SVFValue*)arg;
+           cout << "arg " << i << " pts: " << printPts(ander, val) << endl;
+        }
+    }
     /// Call Graph
     PTACallGraph* callgraph = ander->getPTACallGraph();
 
     /// ICFG
     ICFG* icfg = pag->getICFG();
-
+    
     /// Value-Flow Graph (VFG)
     VFG* vfg = new VFG(callgraph);
 
@@ -210,3 +224,37 @@ int main(int argc, char ** argv)
     return 0;
 }
 
+/*
+ * Class:     svfjava_SVFJava
+ * Method:    runmain
+ * Signature: ([Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_svfjava_SVFJava_runmain
+(JNIEnv * env, jobject jthis, jobjectArray args) {
+    // thank god for chatGPT
+    
+    printf("calling main\n");
+    // Get the number of arguments in the jobjectArray
+    jsize argc = env->GetArrayLength(args);
+    
+    // Create a C array of strings to hold the arguments
+    char* argv[argc];
+    
+    // Populate the argv array with argument values from jobjectArray
+    for (jsize i = 0; i < argc; i++) {
+        jstring arg = static_cast<jstring>(env->GetObjectArrayElement(args, i));
+        const char* argStr = env->GetStringUTFChars(arg, 0);
+        argv[i] = strdup(argStr); // Allocate memory for each argument
+        env->ReleaseStringUTFChars(arg, argStr);
+        env->DeleteLocalRef(arg); // Release the local reference
+    }
+    
+    
+    // Call the main function with argc and argv
+    main(argc, argv);
+    
+    // Clean up allocated memory
+    for (jsize i = 0; i < argc; i++) {
+        free(argv[i]);
+    }
+}

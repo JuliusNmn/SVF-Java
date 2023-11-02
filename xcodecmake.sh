@@ -1,0 +1,1 @@
+cmake -G Xcode ..  -DCMAKE_C_COMPILER="$(xcrun -find cc)" -DCMAKE_CXX_COMPILER="$(xcrun -find c++)" -DCMAKE_BUILD_TYPE=Debug -DSVF_DIR=/Users/julius/Developer/SVF -DCMAKE_C_FLAGS="-g" -DCMAKE_CXX_FLAGS="-g"

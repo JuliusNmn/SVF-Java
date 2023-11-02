@@ -1,0 +1,1 @@
+javah -classpath ./main/java svfjava.SVFJava
