@@ -27,3 +27,9 @@ cmake . && make
 clang -S -c -g -fno-discard-value-names -emit-llvm example.c -o example.ll
 ./bin/svf-ex example.ll
 ```
+
+## 5. Run Through Java:
+cmake will compile java files in src/main/java. Run them like this:
+```
+java -cp src/main/java -Djava.library.path=/home/julius/SVF-Java/build/src svfjava.SVFJava example.ll
+```
