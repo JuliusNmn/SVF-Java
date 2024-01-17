@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.4.3)
+
+set(SVF_DIR "/home/julius/SVF")
+set(LLVM_DIR "/home/julius/SVF/llvm-14.0.0.obj")
+set(Z3_DIR "/home/julius/SVF/z3.obj")
+
 if (DEFINED LLVM_DIR)
         set(ENV{LLVM_DIR} "${LLVM_DIR}")
     endif()

@@ -116,10 +116,10 @@ void traverseOnICFG(ICFG* icfg, const Instruction* inst)
 /*!
  * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
  */
-void traverseOnVFG(const SVFG* vfg, Value* val)
+void traverseOnVFG(const SVFG* vfg, const SVFValue* svfval)
 {
     SVFIR* pag = SVFIR::getPAG();
-    SVFValue* svfval = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
+    // SVFValue* svfval = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
 
     PAGNode* pNode = pag->getGNode(pag->getValueNode(svfval));
     const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
@@ -158,7 +158,13 @@ void traverseOnVFG(const SVFG* vfg, Value* val)
 
 int main(int argc, char ** argv)
 {
-
+    if (argc == 1) {
+        char* newArgv[2];
+        newArgv[0] = argv[0];
+        newArgv[1] = "/home/julius/SVF-Java/example.ll";
+        argc = 2;
+        argv = newArgv;
+    }
     int arg_num = 0;
     char **arg_value = new char*[argc];
     std::vector<std::string> moduleNameVec;
@@ -179,20 +185,12 @@ int main(int argc, char ** argv)
 
     /// Create Andersen's pointer analysis
     Andersen* ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
-`
     /// Query aliases
     /// aliasQuery(ander,value1,value2);
     /// Print points-to information
     /// printPts(ander, value1);
 
-    for (const SVFFunction* func : *svfModule) {
-        cout << "function " <<  func->getName() << " argcount: " << func->arg_size() << endl;
-        for (u32_t i = 0; i < func->arg_size(); i++) {
-           const  SVFArgument* arg = func->getArg(i);
-           SVFValue* val = (SVFValue*)arg;
-           cout << "arg " << i << " pts: " << printPts(ander, val) << endl;
-        }
-    }
+   
     /// Call Graph
     PTACallGraph* callgraph = ander->getPTACallGraph();
 
@@ -206,9 +204,21 @@ int main(int argc, char ** argv)
     SVFGBuilder svfBuilder;
     SVFG* svfg = svfBuilder.buildFullSVFG(ander);
 
-    /// Collect uses of an LLVM Value
-    /// traverseOnVFG(svfg, value);
+    
+     for (const SVFFunction* func : *svfModule) {
+        cout << "function " <<  func->getName() << " argcount: " << func->arg_size() << endl;
+        for (u32_t i = 0; i < func->arg_size(); i++) {
+           const  SVFArgument* arg = func->getArg(i);
+           SVFValue* val = (SVFValue*)arg;
+           cout << "arg " << i << " pts: " << printPts(ander, val) << endl;
+        }
+           if (func->getName() == "print") {
+            const SVFValue* value = func->getArg(0);
+            /// Collect uses of an LLVM Value
+            traverseOnVFG(svfg, value);
 
+        }
+    }
     /// Collect all successor nodes on ICFG
     /// traverseOnICFG(icfg, value);
 
