@@ -28,8 +28,10 @@ clang -S -c -g -fno-discard-value-names -emit-llvm example.c -o example.ll
 ./bin/svf-ex example.ll
 ```
 
-## 5. Run Through Java:
-cmake will compile java files in src/main/java. Run them like this:
+## 5. Build Jar File:
+build a jar file with `mvn package`.
+the jar file will include the built library.
 ```
-java -cp src/main/java -Djava.library.path=/home/julius/SVF-Java/build/src svfjava.SVFJava example.ll
+mvn package
+java -jar target/svfjava.jar
 ```
