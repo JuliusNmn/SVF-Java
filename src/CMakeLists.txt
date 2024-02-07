@@ -19,10 +19,7 @@ else()
 endif()
 include_directories(${JNI_INCLUDE_DIRS})
 
-execute_process(COMMAND "javac" "-h" "." "main/java/svfjava/SVFJava.java" 
-WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-RESULT_VARIABLE res
-OUTPUT_VARIABLE out)
+
 
 message(STATUS " ${CMAKE_CURRENT_SOURCE_DIR} ${res} ${out}")
 add_executable(svf-ex ${SOURCES})
@@ -36,3 +33,7 @@ target_link_libraries(svf-lib ${SVF_LIB} ${llvm_libs})
 target_link_libraries(svf-lib ${Z3_LIBRARIES})
 set_target_properties( svf-ex PROPERTIES
                        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
+
+execute_process(COMMAND "mvn" "-Dbuilddir=${CMAKE_CURRENT_LIST_DIR}" "-DbuildDirectory=${CMAKE_CURRENT_LIST_DIR}" "clean" "package" WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+RESULT_VARIABLE res
+OUTPUT_VARIABLE out) 

@@ -24,7 +24,7 @@ public class SVFJava {
            System.exit(1);
         }
         System.load(tmpLib);
-    }
+    } 
 
 
     private static String extractLibrary(String name) throws IOException {
@@ -49,7 +49,15 @@ public class SVFJava {
         return lib.getAbsolutePath();
     }
     public static void main(String[] args) {
-        new SVFJava().runmain(args);
+        SVFModule module = SVFModule.createSVFModule("/home/julius/SVF-Java/example.ll");
+        SVFIRBuilder b = SVFIRBuilder.create(module);
+        SVFIR pag = b.build();
+        Andersen ander = Andersen.create(pag);
+        PTACallGraph cg = ander.getPTACallGraph();
+        VFG vfg = VFG.create(cg);
+        SVFGBuilder svfgBuilder = SVFGBuilder.create();
+        SVFG svfg = svfgBuilder.buildFullSVFG(ander);
+        //new SVFJava().runmain(args);
     }
 
     private native void runmain(String[] args);

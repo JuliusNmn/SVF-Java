@@ -32,8 +32,13 @@
 #include "SVF-LLVM/SVFIRBuilder.h"
 #include "Util/Options.h"
 #include "jni.h"
-#include "svfjava_SVFJava.h"
-
+#include "jniheaders/svfjava_SVFJava.h"
+#include "jniheaders/svfjava_Andersen.h"
+#include "jniheaders/svfjava_SVFGBuilder.h"
+#include "jniheaders/svfjava_SVFIRBuilder.h"
+#include "jniheaders/svfjava_SVFJava.h"
+#include "jniheaders/svfjava_SVFModule.h"
+#include "jniheaders/svfjava_VFG.h"
 using namespace llvm;
 using namespace std;
 using namespace SVF;
@@ -157,21 +162,9 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* svfval)
 
 
 int main(int argc, char ** argv)
-{
-    if (argc == 1) {
-        char* newArgv[2];
-        newArgv[0] = argv[0];
-        newArgv[1] = "/home/julius/SVF-Java/example.ll";
-        argc = 2;
-        argv = newArgv;
-    }
-    int arg_num = 0;
-    char **arg_value = new char*[argc];
+{   
     std::vector<std::string> moduleNameVec;
-    LLVMUtil::processArguments(argc, argv, arg_num, arg_value, moduleNameVec);
-    cl::ParseCommandLineOptions(arg_num, arg_value,
-                                "Whole Program Points-to Analysis\n");
-    
+    moduleNameVec.push_back("/home/julius/SVF-Java/example.ll");
     if (Options::WriteAnder() == "ir_annotator")
     {
         LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
@@ -233,7 +226,12 @@ int main(int argc, char ** argv)
     llvm::llvm_shutdown();
     return 0;
 }
-
+void* getCppReferencePointer(JNIEnv* env, jobject obj){
+    jclass cls = env->FindClass("svfjava/CppReference");
+    jfieldID addressField = env->GetFieldID(cls, "address", "J");
+    void* ref = (void*)env->GetLongField(obj, addressField);
+    return ref;
+}
 /*
  * Class:     svfjava_SVFJava
  * Method:    runmain
@@ -267,4 +265,135 @@ JNIEXPORT void JNICALL Java_svfjava_SVFJava_runmain
     for (jsize i = 0; i < argc; i++) {
         free(argv[i]);
     }
+}
+/*
+ * Class:     svfjava_SVFModule
+ * Method:    createSVFModule
+ * Signature: (Ljava/lang/String;)Lsvfjava/SVFModule;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName) {
+    const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
+    std::vector<std::string> moduleNameVec;
+    moduleNameVec.push_back(moduleNameStr);
+
+    SVFModule* svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
+
+    jclass svfModuleClass = env->FindClass("svfjava/SVFModule");
+    jmethodID constructor = env->GetMethodID(svfModuleClass, "<init>", "(J)V");
+    jobject svfModuleObject = env->NewObject(svfModuleClass, constructor, (jlong)svfModule);
+
+    env->ReleaseStringUTFChars(moduleName, moduleNameStr);
+
+    return svfModuleObject;
+}
+
+/*
+ * Class:     svfjava_SVFIRBuilder
+ * Method:    create
+ * Signature: (Lsvfjava/SVFModule;)Lsvfjava/SVFIRBuilder;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFIRBuilder_create(JNIEnv *env, jclass cls, jobject module) {
+    SVFModule* svfModule = (SVFModule*)getCppReferencePointer(env, module);
+    SVFIRBuilder* builder = new SVFIRBuilder(svfModule);
+
+    jclass builderClass = env->FindClass("svfjava/SVFIRBuilder");
+    jmethodID constructor = env->GetMethodID(builderClass, "<init>", "(J)V");
+    jobject builderObject = env->NewObject(builderClass, constructor, (jlong)builder);
+
+    return builderObject;
+}
+
+/*
+ * Class:     svfjava_SVFIRBuilder
+ * Method:    build
+ * Signature: ()Lsvfjava/SVFIR;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFIRBuilder_build(JNIEnv *env, jobject obj) {
+    SVFIRBuilder* builder = (SVFIRBuilder*)getCppReferencePointer(env, obj);
+
+    SVFIR* ir = builder->build();
+
+    jclass irClass = env->FindClass("svfjava/SVFIR");
+    jmethodID constructor = env->GetMethodID(irClass, "<init>", "(J)V");
+    jobject irObject = env->NewObject(irClass, constructor, (jlong)ir);
+
+    return irObject;
+}
+
+/*
+ * Class:     svfjava_Andersen
+ * Method:    create
+ * Signature: (Lsvfjava/SVFIR;)Lsvfjava/Andersen;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_Andersen_create(JNIEnv *env, jclass cls, jobject irObj) {
+    SVFIR* ir = (SVFIR*)getCppReferencePointer(env, irObj);
+
+    Andersen* ander = AndersenWaveDiff::createAndersenWaveDiff(ir);
+
+    jclass anderClass = env->FindClass("svfjava/Andersen");
+    jmethodID constructor = env->GetMethodID(anderClass, "<init>", "(J)V");
+    jobject anderObject = env->NewObject(anderClass, constructor, (jlong)ander);
+
+    return anderObject;
+}
+
+/*
+ * Class:     svfjava_Andersen
+ * Method:    getPTACallGraph
+ * Signature: ()Lsvfjava/PTACallGraph;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_Andersen_getPTACallGraph(JNIEnv *env, jobject obj) {
+    Andersen* ander = (Andersen*)getCppReferencePointer(env, obj);
+
+    PTACallGraph* callgraph = ander->getPTACallGraph();
+
+    jclass callgraphClass = env->FindClass("svfjava/CppReference");
+    jmethodID constructor = env->GetMethodID(callgraphClass, "<init>", "(J)V");
+    jobject callgraphObject = env->NewObject(callgraphClass, constructor, (jlong)callgraph);
+
+    return callgraphObject;
+}
+/*
+ * Class:     svfjava_VFG
+ * Method:    create
+ * Signature: (Lsvfjava/PTACallGraph;)Lsvfjava/VFG;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_VFG_create
+  (JNIEnv * env, jclass cls, jobject cg){
+    PTACallGraph* callgraph = (PTACallGraph*)getCppReferencePointer(env, cg);
+    VFG* vfg = new VFG(callgraph);
+    jclass vfgClass = env->FindClass("svfjava/VFG");
+    jmethodID constructor = env->GetMethodID(vfgClass, "<init>", "(J)V");
+    jobject o = env->NewObject(vfgClass, constructor, (jlong)callgraph);
+    return o;
+  }
+/*
+ * Class:     svfjava_SVFGBuilder
+ * Method:    create
+ * Signature: ()Lsvfjava/SVFGBuilder;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFGBuilder_create(JNIEnv *env, jclass cls) {
+
+    SVFGBuilder* b = new SVFGBuilder();
+    jmethodID constructor = env->GetMethodID(cls, "<init>", "(J)V");
+    jobject o = env->NewObject(cls, constructor, (jlong)b);
+
+    return o;
+}
+/*
+ * Class:     svfjava_SVFGBuilder
+ * Method:    buildFullSVFG
+ * Signature: (Lsvfjava/Andersen;)Lsvfjava/SVFG;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFGBuilder_buildFullSVFG(JNIEnv *env, jobject jthis, jobject obj) {
+    SVFGBuilder* builder = (SVFGBuilder*)getCppReferencePointer(env, jthis);
+    Andersen* ander = (Andersen*)getCppReferencePointer(env, obj);
+
+    SVFG* svfg = builder->buildFullSVFG(ander);
+
+    jclass svfgClass = env->FindClass("svfjava/SVFG");
+    jmethodID constructor = env->GetMethodID(svfgClass, "<init>", "(J)V");
+    jobject svfgObject = env->NewObject(svfgClass, constructor, (jlong)svfg);
+
+    return svfgObject;
 }
