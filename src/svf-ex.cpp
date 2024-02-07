@@ -39,6 +39,13 @@
 #include "jniheaders/svfjava_SVFJava.h"
 #include "jniheaders/svfjava_SVFModule.h"
 #include "jniheaders/svfjava_VFG.h"
+#include "jniheaders/svfjava_SVFFunction.h"
+#include "jniheaders/svfjava_PointsTo.h"
+#include "jniheaders/svfjava_SVFVar.h"
+#include "jniheaders/svfjava_SVFValue.h"
+#include "jniheaders/svfjava_SVFIR.h"
+
+
 using namespace llvm;
 using namespace std;
 using namespace SVF;
@@ -69,7 +76,7 @@ std::string printPts(PointerAnalysis* pta, SVFValue* svfval)
     NodeID pNodeId = pta->getPAG()->getValueNode(svfval);
     const PointsTo& pts = pta->getPts(pNodeId);
     for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
-            ii != ie; ii++)
+            ii != ie; ii++) 
     {
         rawstr << " " << *ii << " ";
         PAGNode* targetObj = pta->getPAG()->getGNode(*ii);
@@ -82,11 +89,7 @@ std::string printPts(PointerAnalysis* pta, SVFValue* svfval)
     return rawstr.str();
 
 }
-std::string printPts(PointerAnalysis* pta, Value* val)
-{
-    SVFValue* svfval = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(val);
-    return printPts(pta, svfval);
-}
+
 
 /*!
  * An example to query/collect all successor nodes from a ICFGNode (iNode) along control-flow graph (ICFG)
@@ -191,7 +194,7 @@ int main(int argc, char ** argv)
     ICFG* icfg = pag->getICFG();
     
     /// Value-Flow Graph (VFG)
-    VFG* vfg = new VFG(callgraph);
+    VFG* vfg = new VFG(callgraph); 
 
     /// Sparse value-flow graph (SVFG)
     SVFGBuilder svfBuilder;
@@ -397,3 +400,101 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFGBuilder_buildFullSVFG(JNIEnv *env, jo
 
     return svfgObject;
 }
+/*
+ * Class:     svfjava_SVFModule
+ * Method:    getFunctions
+ * Signature: ()[Lsvfjava/SVFFunction;
+ */
+JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions(JNIEnv *env, jobject obj) {
+    SVFModule* svfModule = (SVFModule*)getCppReferencePointer(env, obj);
+
+    std::vector<const SVFFunction*> functions = svfModule->getFunctionSet();
+
+    jclass svfFunctionClass = env->FindClass("svfjava/SVFFunction");
+    jmethodID constructor = env->GetMethodID(svfFunctionClass, "<init>", "(J)V");
+
+    jobjectArray functionArray = env->NewObjectArray(functions.size(), svfFunctionClass, nullptr);
+
+    for (size_t i = 0; i < functions.size(); ++i) {
+        jobject svfFunctionObject = env->NewObject(svfFunctionClass, constructor, (jlong) functions[i]);
+        env->SetObjectArrayElement(functionArray, i, svfFunctionObject);
+    }
+
+    return functionArray;
+}
+/*
+ * Class:     svfjava_SVFFunction
+ * Method:    getArgumentsNative
+ * Signature: ()[Lsvfjava/SVFArgument;
+ */
+JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFFunction_getArgumentsNative(JNIEnv *env, jobject obj) {
+    SVFFunction* svfFunction = (SVFFunction*)getCppReferencePointer(env, obj);
+
+    jclass svfArgumentClass = env->FindClass("svfjava/SVFArgument");
+    jmethodID constructor = env->GetMethodID(svfArgumentClass, "<init>", "(J)V");
+
+    jobjectArray argumentArray = env->NewObjectArray(svfFunction->arg_size(), svfArgumentClass, nullptr);
+
+    for (size_t i = 0; i < svfFunction->arg_size(); ++i) {
+        const SVFArgument* arg = svfFunction->getArg(i);
+        jobject svfArgumentObject = env->NewObject(svfArgumentClass, constructor, (jlong) arg);
+
+        // Check if the argument can be cast to SVFValue
+        const SVFValue* svfValue = dynamic_cast<const SVFValue*>(arg);
+        if (svfValue != nullptr) {
+            // It can be cast to SVFValue, create SVFValue object instead
+            jclass svfValueClass = env->FindClass("svfjava/SVFValue");
+            jmethodID valueConstructor = env->GetMethodID(svfValueClass, "<init>", "(J)V");
+            svfArgumentObject = env->NewObject(svfValueClass, valueConstructor, (jlong) svfValue);
+        }
+
+        env->SetObjectArrayElement(argumentArray, i, svfArgumentObject);
+    }
+
+    return argumentArray;
+}
+
+/*
+ * Class:     svfjava_PointsTo
+ * Method:    toStringNative
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_svfjava_PointsTo_toStringNative
+  (JNIEnv* env, jobject jthis){
+    PointsTo* pt = (PointsTo*)getCppReferencePointer(env, jthis);
+    return nullptr;
+}
+
+/*
+ * Class:     svfjava_SVFValue
+ * Method:    toStringNative
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_svfjava_SVFValue_toStringNative
+  (JNIEnv* env, jobject jthis){
+    SVFValue* v = (SVFValue*)getCppReferencePointer(env, jthis);
+    std::string s = v->toString();
+     s.c_str();
+     return nullptr;
+  }
+
+
+/*
+ * Class:     svfjava_SVFIR
+ * Method:    getGNode
+ * Signature: (Lsvfjava/PointsTo;)Lsvfjava/SVFVar;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getGNode
+  (JNIEnv* env, jobject jthis){
+    
+  }
+
+/*
+ * Class:     svfjava_SVFVar
+ * Method:    getValue
+ * Signature: ()Lsvfjava/SVFValue;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFVar_getValue
+  (JNIEnv* env, jobject jthis){
+    
+  }

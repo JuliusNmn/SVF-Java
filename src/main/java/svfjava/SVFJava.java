@@ -57,6 +57,11 @@ public class SVFJava {
         VFG vfg = VFG.create(cg);
         SVFGBuilder svfgBuilder = SVFGBuilder.create();
         SVFG svfg = svfgBuilder.buildFullSVFG(ander);
+        for (SVFFunction f : module.getFunctions()){
+            for (SVFArgument a : f.getArguments()){
+                System.out.println(a);
+            }
+        }
         //new SVFJava().runmain(args);
     }
 

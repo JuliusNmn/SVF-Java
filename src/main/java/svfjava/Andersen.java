@@ -6,4 +6,5 @@ public class Andersen extends CppReference {
 
     public static native Andersen create(SVFIR ir);
     public native PTACallGraph getPTACallGraph();
+    public native PointsTo getPTS();
 }

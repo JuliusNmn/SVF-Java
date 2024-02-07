@@ -15,6 +15,14 @@ extern "C" {
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule
   (JNIEnv *, jclass, jstring);
 
+/*
+ * Class:     svfjava_SVFModule
+ * Method:    getFunctions
+ * Signature: ()[Lsvfjava/SVFFunction;
+ */
+JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions
+  (JNIEnv *, jobject);
+
 #ifdef __cplusplus
 }
 #endif

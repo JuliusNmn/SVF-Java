@@ -23,6 +23,14 @@ JNIEXPORT jobject JNICALL Java_svfjava_Andersen_create
 JNIEXPORT jobject JNICALL Java_svfjava_Andersen_getPTACallGraph
   (JNIEnv *, jobject);
 
+/*
+ * Class:     svfjava_Andersen
+ * Method:    getPTS
+ * Signature: ()Lsvfjava/PointsTo;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_Andersen_getPTS
+  (JNIEnv *, jobject);
+
 #ifdef __cplusplus
 }
 #endif
