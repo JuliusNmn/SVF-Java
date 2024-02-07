@@ -7,5 +7,5 @@ public class SVFGBuilder extends CppReference {
     }
 
     public static native SVFGBuilder create();
-    public native SVFIR buildFullSVFG(Andersen andersen);
+    public native SVFG buildFullSVFG(Andersen andersen);
 }

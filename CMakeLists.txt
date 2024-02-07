@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.4.3)
+project(SVF-Java)
 
 set(SVF_DIR "/home/julius/SVF")
 set(LLVM_DIR "/home/julius/SVF/llvm-14.0.0.obj")
@@ -100,3 +101,14 @@ else()
 endif()
 
 add_subdirectory(src)
+add_custom_command(
+    OUTPUT "${CMAKE_BINARY_DIR}/target/svfjava.jar"
+    COMMAND "mvn" "-DbuildDirectory=${CMAKE_BINARY_DIR}" "clean" "package" 
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+add_custom_target(mavenbuild ALL
+    COMMAND echo "This is ALL target '${CMAKE_BINARY_DIR}/target', and it depends on ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java"
+    DEPENDS  "${CMAKE_BINARY_DIR}/target/svfjava.jar"  ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java
+    VERBATIM
+)
+add_dependencies(mavenbuild svf-lib)
