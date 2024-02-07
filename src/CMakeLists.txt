@@ -1,3 +1,6 @@
+cmake_minimum_required(VERSION 3.5)
+project(SVF-Java)
+
 llvm_map_components_to_libnames(llvm_libs bitwriter core ipo irreader instcombine instrumentation target linker analysis scalaropts support )
 file (GLOB SOURCES
    *.cpp
@@ -34,6 +37,6 @@ target_link_libraries(svf-lib ${Z3_LIBRARIES})
 set_target_properties( svf-ex PROPERTIES
                        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
 
-execute_process(COMMAND "mvn" "-Dbuilddir=${CMAKE_CURRENT_LIST_DIR}/mvnbuild" "-DbuildDirectory=${CMAKE_CURRENT_LIST_DIR}/mvnbuild" "clean" "package" WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+execute_process(COMMAND "mvn" "-Dbuilddir=${CMAKE_CURRENT_BINARY_DIR}/mvnbuild" "clean" "package" WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
 RESULT_VARIABLE res
 OUTPUT_VARIABLE out) 
