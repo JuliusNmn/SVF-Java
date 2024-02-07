@@ -6,6 +6,6 @@ public class SVFGBuilder extends CppReference {
         super(address);
     }
 
-    public static native SVFIRBuilder create();
-    public native SVFIR build();
+    public static native SVFGBuilder create();
+    public native SVFIR buildFullSVFG(Andersen andersen);
 }
