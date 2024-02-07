@@ -20,18 +20,12 @@ source ./env.sh
 ```
 cmake the project (`cmake -DCMAKE_BUILD_TYPE=Debug .` for debug build)
 ```
-cmake . && make
+mkdir build
+cd build
+cmake .. && make jar
 ```
 ## 4. Analyze a bc file using svf-ex executable
 ```
 clang -S -c -g -fno-discard-value-names -emit-llvm example.c -o example.ll
-./bin/svf-ex example.ll
-```
-
-## 5. Build Jar File:
-build a jar file with `mvn package`.
-the jar file will include the built library.
-```
-mvn package
-java -jar target/svfjava.jar
+java -jar target/svfjava.jar example.ll
 ```

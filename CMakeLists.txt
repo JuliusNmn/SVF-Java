@@ -101,14 +101,13 @@ else()
 endif()
 
 add_subdirectory(src)
-add_custom_command(
-    OUTPUT "${CMAKE_BINARY_DIR}/target/svfjava.jar"
-    COMMAND "mvn" "-DbuildDirectory=${CMAKE_BINARY_DIR}" "clean" "package" 
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
-add_custom_target(mavenbuild ALL
-    COMMAND echo "This is ALL target '${CMAKE_BINARY_DIR}/target', and it depends on ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java"
-    DEPENDS  "${CMAKE_BINARY_DIR}/target/svfjava.jar"  ${CMAKE_CURRENT_SOURCE_DIR}/src/main/java
+# Add a custom target to run Maven build
+add_custom_target(jar
+    COMMAND "mvn" "-DbuildDirectory=${CMAKE_BINARY_DIR}" "clean" "package" 
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    COMMENT "Running Maven build"
     VERBATIM
 )
-add_dependencies(mavenbuild svf-lib)
+
+add_dependencies(jar svf-lib)
