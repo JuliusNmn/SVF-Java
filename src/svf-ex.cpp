@@ -21,9 +21,11 @@
 //===-----------------------------------------------------------------------===//
 
 /*
+ // 
  // A driver program of SVF including usages of SVF APIs
  //
- // Author: Yulei Sui,
+ // Author: Yulei Sui, Julius Naeumann
+
  */
 
 #include "SVF-LLVM/LLVMUtil.h"
@@ -50,6 +52,15 @@ using namespace llvm;
 using namespace std;
 using namespace SVF;
 
+/*
+Creates a new java instance of a specified CppReference class, 
+initialized with the address of the supplied pointer
+*/
+jobject createCppRefObject(JNIEnv* env, char* classname, const void* pointer) {
+    jclass svfValueClass = env->FindClass(classname);
+    jmethodID valueConstructor = env->GetMethodID(svfValueClass, "<init>", "(J)V");
+    return  env->NewObject(svfValueClass, valueConstructor, (jlong) pointer);
+}
 static llvm::cl::opt<std::string> InputFilename(cl::Positional,
         llvm::cl::desc("<input bitcode>"), llvm::cl::init("-"));
 
@@ -443,9 +454,7 @@ JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFFunction_getArgumentsNative(JNIEn
         const SVFValue* svfValue = dynamic_cast<const SVFValue*>(arg);
         if (svfValue != nullptr) {
             // It can be cast to SVFValue, create SVFValue object instead
-            jclass svfValueClass = env->FindClass("svfjava/SVFValue");
-            jmethodID valueConstructor = env->GetMethodID(svfValueClass, "<init>", "(J)V");
-            svfArgumentObject = env->NewObject(svfValueClass, valueConstructor, (jlong) svfValue);
+            svfArgumentObject = createCppRefObject(env, "svfjava/SVFValue", svfValue);
         }
 
         env->SetObjectArrayElement(argumentArray, i, svfArgumentObject);
@@ -474,8 +483,9 @@ JNIEXPORT jstring JNICALL Java_svfjava_SVFValue_toStringNative
   (JNIEnv* env, jobject jthis){
     SVFValue* v = (SVFValue*)getCppReferencePointer(env, jthis);
     std::string s = v->toString();
-     s.c_str();
-     return nullptr;
+    const char* c = s.c_str();
+    jstring moduleNameStr = env->NewStringUTF(c);
+    return moduleNameStr;
   }
 
 
@@ -485,9 +495,57 @@ JNIEXPORT jstring JNICALL Java_svfjava_SVFValue_toStringNative
  * Signature: (Lsvfjava/PointsTo;)Lsvfjava/SVFVar;
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getGNode
-  (JNIEnv* env, jobject jthis){
-    
-  }
+  (JNIEnv* env, jobject jthis, jobject jpt){
+    // SVFIR* ir = (SVFIR*)getCppReferencePointer(env, jthis);
+    // PointsTo* pt = (PointsTo*)getCppReferencePointer(env, jpt);
+    // NodeID nodeID = ir->getValueNode(svfval);
+    // PAGNode* node = ir->getGNode(nodeID);
+    // return createCppRefObject(env, "svfjava/SVFVar", node);
+}
+/*
+ * Class:     svfjava_SVFIR
+ * Method:    getValueNode
+ * Signature: (Lsvfjava/SVFValue;)Lsvfjava/NodeID;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getValueNode
+  (JNIEnv* env, jobject jthis, jobject val){
+    SVFIR* ir = (SVFIR*)getCppReferencePointer(env, jthis);
+    SVFValue* svfVal = (SVFValue*)getCppReferencePointer(env, val);
+    NodeID nodeId = ir->getValueNode(svfVal);
+
+}
+
+/*
+ * Class:     svfjava_Andersen
+ * Method:    getPTS
+ * Signature: (Lsvfjava/SVFIR;Lsvfjava/SVFValue;)[Lsvfjava/SVFVar;
+ */
+JNIEXPORT jobjectArray JNICALL Java_svfjava_Andersen_getPTS(JNIEnv * env, jobject jthis, jobject jir, jobject jval){
+    Andersen* andersen = (Andersen*)getCppReferencePointer(env, jthis);
+    SVFIR* ir = (SVFIR*)getCppReferencePointer(env, jir);
+    SVFValue* svfVal = (SVFValue*)getCppReferencePointer(env, jval);
+    NodeID nodeId = ir->getValueNode(svfVal);
+    const PointsTo& pts = andersen->getPts(nodeId);
+    std::vector<PAGNode*> pointsToSet;
+    for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
+         ii != ie; ii++) {
+        PAGNode* target = ir->getGNode(*ii);
+        pointsToSet.push_back(target);
+    }
+
+    jclass pointsToClass = env->FindClass("svfjava/PointsTo");
+    jobjectArray resultArray = env->NewObjectArray(pointsToSet.size(), pointsToClass, nullptr);
+
+    for (size_t i = 0; i < pointsToSet.size(); ++i) {
+        
+        jobject target = createCppRefObject(env, "svfjava/SVFVar", pointsToSet[i]);
+        env->SetObjectArrayElement(resultArray, i, target);
+        env->DeleteLocalRef(target);
+    }
+
+    // Return the jobjectArray
+    return resultArray;
+}
 
 /*
  * Class:     svfjava_SVFVar
@@ -496,5 +554,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getGNode
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFVar_getValue
   (JNIEnv* env, jobject jthis){
-    
+    SVFVar* v = (SVFVar*)getCppReferencePointer(env, jthis);
+    const SVFValue* val = v->getValue();
+    return createCppRefObject(env, "svfjava/SVFValue", val);
   }

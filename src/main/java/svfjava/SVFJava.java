@@ -60,6 +60,7 @@ public class SVFJava {
         for (SVFFunction f : module.getFunctions()){
             for (SVFArgument a : f.getArguments()){
                 System.out.println(a);
+                
             }
         }
         //new SVFJava().runmain(args);

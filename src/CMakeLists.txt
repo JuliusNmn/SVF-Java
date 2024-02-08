@@ -21,14 +21,14 @@ include_directories(${JNI_INCLUDE_DIRS})
 
 
 # uncomment to generate native executable. 
-#add_executable(svf-ex ${SOURCES})
-#target_compile_options(svf-ex PRIVATE
-#    $<$<CXX_COMPILER_ID:Clang>:-g>
-#    )
+add_executable(svf-ex ${SOURCES})
+target_compile_options(svf-ex PRIVATE
+    $<$<CXX_COMPILER_ID:Clang>:-g>
+    )
 add_library(svf-lib SHARED ${SOURCES})
-#target_link_libraries(svf-ex ${SVF_LIB} ${llvm_libs})
-#target_link_libraries(svf-ex ${Z3_LIBRARIES})
+target_link_libraries(svf-ex ${SVF_LIB} ${llvm_libs})
+target_link_libraries(svf-ex ${Z3_LIBRARIES})
 target_link_libraries(svf-lib ${SVF_LIB} ${llvm_libs})
 target_link_libraries(svf-lib ${Z3_LIBRARIES})
-#set_target_properties( svf-ex PROPERTIES
-#                       RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
+set_target_properties( svf-ex PROPERTIES
+                       RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )

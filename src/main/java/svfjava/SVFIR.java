@@ -5,4 +5,5 @@ public class SVFIR extends CppReference {
         super(address);
     }
     public native SVFVar getGNode(PointsTo pointsTo);
+    public native NodeID getValueNode(SVFValue val);
 }

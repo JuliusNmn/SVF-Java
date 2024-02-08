@@ -15,6 +15,14 @@ extern "C" {
 JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getGNode
   (JNIEnv *, jobject, jobject);
 
+/*
+ * Class:     svfjava_SVFIR
+ * Method:    getValueNode
+ * Signature: (Lsvfjava/SVFValue;)Lsvfjava/NodeID;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getValueNode
+  (JNIEnv *, jobject, jobject);
+
 #ifdef __cplusplus
 }
 #endif
