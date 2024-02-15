@@ -4,8 +4,8 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
          
     <modelVersion>4.0.0</modelVersion>
-    <groupId>your.group.id</groupId>
-    <artifactId>your-artifact-id</artifactId>
+    <groupId>com.svfjava</groupId>
+    <artifactId>svfjava</artifactId>
     <version>1.0.0</version>
     
     <properties>
@@ -35,6 +35,29 @@
         </resources>
         
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <mainClass>svfjava.SVFJava</mainClass>
+                    <arguments>
+                    </arguments>
+                    <systemProperties>
+                        <systemProperty>
+                            <key>myproperty</key>
+                            <value>myvalue</value>
+                        </systemProperty>
+                    </systemProperties>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

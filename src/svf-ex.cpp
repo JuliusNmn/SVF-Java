@@ -219,7 +219,8 @@ int main(int argc, char ** argv)
            SVFValue* val = (SVFValue*)arg;
            cout << "arg " << i << " pts: " << printPts(ander, val) << endl;
         }
-           if (func->getName() == "print") {
+        //func->getExitBB()->getTerminator()->
+        if (func->getName() == "print") {
             const SVFValue* value = func->getArg(0);
             /// Collect uses of an LLVM Value
             traverseOnVFG(svfg, value);
@@ -450,13 +451,6 @@ JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFFunction_getArgumentsNative(JNIEn
         const SVFArgument* arg = svfFunction->getArg(i);
         jobject svfArgumentObject = env->NewObject(svfArgumentClass, constructor, (jlong) arg);
 
-        // Check if the argument can be cast to SVFValue
-        const SVFValue* svfValue = dynamic_cast<const SVFValue*>(arg);
-        if (svfValue != nullptr) {
-            // It can be cast to SVFValue, create SVFValue object instead
-            svfArgumentObject = createCppRefObject(env, "svfjava/SVFValue", svfValue);
-        }
-
         env->SetObjectArrayElement(argumentArray, i, svfArgumentObject);
     }
 
@@ -533,11 +527,11 @@ JNIEXPORT jobjectArray JNICALL Java_svfjava_Andersen_getPTS(JNIEnv * env, jobjec
         pointsToSet.push_back(target);
     }
 
-    jclass pointsToClass = env->FindClass("svfjava/PointsTo");
+    jclass pointsToClass = env->FindClass("svfjava/SVFVar");
+
     jobjectArray resultArray = env->NewObjectArray(pointsToSet.size(), pointsToClass, nullptr);
 
     for (size_t i = 0; i < pointsToSet.size(); ++i) {
-        
         jobject target = createCppRefObject(env, "svfjava/SVFVar", pointsToSet[i]);
         env->SetObjectArrayElement(resultArray, i, target);
         env->DeleteLocalRef(target);

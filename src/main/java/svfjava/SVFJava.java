@@ -49,7 +49,11 @@ public class SVFJava {
         return lib.getAbsolutePath();
     }
     public static void main(String[] args) {
-        SVFModule module = SVFModule.createSVFModule("/home/julius/SVF-Java/example.ll");
+        String moduleName = "/home/julius/SVF-Java/example.ll";
+        if (args.length > 0) {
+            moduleName = args[0];
+        }
+        SVFModule module = SVFModule.createSVFModule(moduleName);
         SVFIRBuilder b = SVFIRBuilder.create(module);
         SVFIR pag = b.build();
         Andersen ander = Andersen.create(pag);
@@ -59,8 +63,12 @@ public class SVFJava {
         SVFG svfg = svfgBuilder.buildFullSVFG(ander);
         for (SVFFunction f : module.getFunctions()){
             for (SVFArgument a : f.getArguments()){
-                System.out.println(a);
-                
+                System.out.println("argument: " + a);
+                SVFVar[] pts = ander.getPTS(pag, a);
+                for (SVFVar v : pts) {
+                    SVFValue val = v.getValue();
+                    System.out.println("points to " + val);
+                }
             }
         }
         //new SVFJava().runmain(args);
