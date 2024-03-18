@@ -6,4 +6,10 @@ public class CppReference {
     public CppReference(long address) {
         this.address = address;
     }
+    public boolean equals(Object other) {
+        if (other instanceof CppReference) {
+            return ((CppReference)other).address == this.address;
+        }
+        return false;
+    }
 }

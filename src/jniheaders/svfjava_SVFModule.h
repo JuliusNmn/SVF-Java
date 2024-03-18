@@ -23,6 +23,14 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule
 JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions
   (JNIEnv *, jobject);
 
+/*
+ * Class:     svfjava_SVFModule
+ * Method:    processFunction
+ * Signature: (Lsvfjava/SVFFunction;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
+  (JNIEnv *, jobject, jobject, jobject, jobjectArray);
+
 #ifdef __cplusplus
 }
 #endif

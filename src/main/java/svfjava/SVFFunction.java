@@ -6,8 +6,8 @@ public class SVFFunction extends CppReference {
     }
 
     private native SVFArgument[] getArgumentsNative();
-
     public SVFArgument[] getArguments() {
         return getArgumentsNative();
     }
+
 }

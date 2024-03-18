@@ -49,28 +49,26 @@ public class SVFJava {
         return lib.getAbsolutePath();
     }
     public static void main(String[] args) {
-        String moduleName = "/home/julius/SVF-Java/example.ll";
+        String moduleName = "/home/julius/SVF-Java/libnative.bc";
         if (args.length > 0) {
             moduleName = args[0];
         }
         SVFModule module = SVFModule.createSVFModule(moduleName);
-        SVFIRBuilder b = SVFIRBuilder.create(module);
-        SVFIR pag = b.build();
-        Andersen ander = Andersen.create(pag);
-        PTACallGraph cg = ander.getPTACallGraph();
-        VFG vfg = VFG.create(cg);
-        SVFGBuilder svfgBuilder = SVFGBuilder.create();
-        SVFG svfg = svfgBuilder.buildFullSVFG(ander);
+        module.listener = new SVFAnalysisListener() {
+              public Object nativeToJavaCallDetected(SVFValue base, String methodName, String methodSignature, SVFValue[] args){
+                return null;
+              }
+          };
         for (SVFFunction f : module.getFunctions()){
-            for (SVFArgument a : f.getArguments()){
-                System.out.println("argument: " + a);
-                SVFVar[] pts = ander.getPTS(pag, a);
-                for (SVFVar v : pts) {
-                    SVFValue val = v.getValue();
-                    System.out.println("points to " + val);
-                }
-            }
+           Object r = module.processFunction(null, null);
+           SVFVar[] pts = ander.getPTS(pag, a);
+           for (SVFVar v : pts) {
+               SVFValue val = v.getValue();
+               System.out.println("points to " + val);
+           }
         }
+        //svfg.dump("svfg");
+        //  dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
         //new SVFJava().runmain(args);
     }
 
