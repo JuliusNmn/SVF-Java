@@ -5,15 +5,17 @@ public class SVFModule extends CppReference {
     public SVFG svfg;
     public VFG vfg;
     public SVFIR pag;
+    public Andersen andersen;
+    public PTACallGraph cg;
     private SVFModule(long address) {
         super(address);
         SVFIRBuilder b = SVFIRBuilder.create(this);
         pag = b.build();
-        Andersen ander = Andersen.create(pag);
-        PTACallGraph cg = ander.getPTACallGraph();
+        andersen = Andersen.create(pag);
+        cg = andersen.getPTACallGraph();
         vfg = VFG.create(cg);
         SVFGBuilder svfgBuilder = SVFGBuilder.create();
-        svfg = svfgBuilder.buildFullSVFG(ander);
+        svfg = svfgBuilder.buildFullSVFG(andersen);
     }
 
     public static native SVFModule createSVFModule(String moduleName);

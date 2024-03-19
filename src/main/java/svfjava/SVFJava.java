@@ -56,16 +56,17 @@ public class SVFJava {
         SVFModule module = SVFModule.createSVFModule(moduleName);
         module.listener = new SVFAnalysisListener() {
               public Object nativeToJavaCallDetected(SVFValue base, String methodName, String methodSignature, SVFValue[] args){
+                SVFVar[] basePTS = module.andersen.getPTS(module.pag, base);
+                System.out.println("points to set for base: " + basePTS.length);
+                for (SVFVar v : basePTS) {
+                   SVFValue val = v.getValue();
+                   System.out.println("points to " + val);
+               }
                 return null;
               }
           };
         for (SVFFunction f : module.getFunctions()){
-           Object r = module.processFunction(null, null);
-           SVFVar[] pts = ander.getPTS(pag, a);
-           for (SVFVar v : pts) {
-               SVFValue val = v.getValue();
-               System.out.println("points to " + val);
-           }
+                   Object r = module.processFunction(f, null, null);
         }
         //svfg.dump("svfg");
         //  dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
