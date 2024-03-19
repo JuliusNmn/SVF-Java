@@ -280,6 +280,20 @@ const SVFCallInst *getDefinitionIfRetVal(SVFG *svfg, const SVFValue *parameter) 
 }
 
 
+const SVFValue* getLoadedValue(SVFIR* pag, const SVFValue* val) {
+    NodeID nodeId = pag->getValueNode(val);
+    auto gnodepag = pag->getGNode(nodeId);
+    for (const auto &loadEdge: gnodepag->getIncomingEdges(SVFStmt::PEDGEK::Load)) {
+        cout << loadEdge->toString() << endl;
+        if (auto loadStmt = SVFUtil::dyn_cast<LoadStmt>(loadEdge)) {
+            auto rhs = loadStmt->getRHSVar();
+            auto val = rhs->getValue();
+            return val;
+        }
+    }
+    return nullptr;
+}
+
 typedef std::function<jobject(const SVFValue*,const char *,const char *,std::vector<const SVFValue*>)> Callback;
 jobject processFunction(SVFModule* module, SVFIR* pag, SVFG* svfg, VFG* vfg, const SVFFunction* func, Callback cb) {
     cout << "processing function " << func->getName() << endl;
@@ -481,11 +495,13 @@ jobject processFunction(SVFModule* module, SVFIR* pag, SVFG* svfg, VFG* vfg, con
             vector<const SVFValue*> callsiteParameterNodes;
             for (int i = 3; i < callInst->arg_size(); i++) {
                 const SVFValue* arg = callInst->getArgOperand(i);
-                callsiteParameterNodes.push_back(arg);
+                const SVFValue* argiLoaded = getLoadedValue(pag, arg);
+                callsiteParameterNodes.push_back(argiLoaded ? argiLoaded : arg);
+
             }
             cout << "detected jni call." << endl;
-
-            jobject callRetVal = cb(base, methodName, methodSignature, callsiteParameterNodes);
+            const SVFValue* baseLoaded = getLoadedValue(pag, base);
+            jobject callRetVal = cb(baseLoaded ? baseLoaded :  base, methodName, methodSignature, callsiteParameterNodes);
             cout << callRetVal << endl;
 
         }
@@ -493,6 +509,7 @@ jobject processFunction(SVFModule* module, SVFIR* pag, SVFG* svfg, VFG* vfg, con
     }
     return nullptr;
 }
+
 
 int main(int argc, char **argv) {
 
@@ -551,7 +568,32 @@ int main(int argc, char **argv) {
         jobject base = new _jobject();
         std::vector<jobject> args;
         args.push_back(new _jobject());
-        Callback callback = [](const SVFValue* base, const char* methodName, const char* methodSignature, std::vector<const SVFValue*> args) {
+        Callback callback = [pag, ander, svfg](const SVFValue* base, const char* methodName, const char* methodSignature, std::vector<const SVFValue*> args) {
+            cout << "base: " << base->toString() << endl;
+
+
+            NodeID nodeId = pag->getValueNode(base);
+
+            const PointsTo &pts = ander->getPts(nodeId);
+            std::vector<PAGNode *> pointsToSet;
+            for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
+                 ii != ie; ii++) {
+                PAGNode *target = pag->getGNode(*ii);
+                cout << "base pts " << target->toString() << endl;
+                pointsToSet.push_back(target);
+            }
+            auto svfgnode = svfg->getSVFGNode(nodeId);
+            for (const auto &item: args) {
+                NodeID nodeId = pag->getValueNode(item);
+                const PointsTo &pts = ander->getPts(nodeId);
+                for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
+                     ii != ie; ii++) {
+                    PAGNode *target = pag->getGNode(*ii);
+                    cout << "base pts " << target->toString() << endl;
+                    pointsToSet.push_back(target);
+                }
+            }
+
             return nullptr;
         };
         processFunction(svfModule, pag, svfg, vfg, func, callback);
