@@ -66,6 +66,13 @@ public class SVFJava {
               }
           };
         for (SVFFunction f : module.getFunctions()){
+                    SVFValue[] funArgs = module.pag.getArgumentValues(f);
+                         System.out.println("funArgs: " + funArgs.length);
+
+                    for (SVFValue arg : funArgs) {
+                         System.out.println("argument " + arg);
+
+                    }
                    Object r = module.processFunction(f, null, null);
         }
         //svfg.dump("svfg");

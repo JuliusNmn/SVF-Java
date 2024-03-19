@@ -568,12 +568,21 @@ int main(int argc, char **argv) {
         jobject base = new _jobject();
         std::vector<jobject> args;
         args.push_back(new _jobject());
+        auto funArgs = pag->getFunArgsList(func);
+        for (const auto &arg: funArgs) {
+            cout << "arg " << arg->toString() << " val " << arg->getValue()->toString() << endl;
+
+            for (const auto &edge: arg->getOutEdges()) {
+                if (auto store = SVFUtil::dyn_cast<StoreStmt>(edge)) {
+                    cout << "arg stored: " << edge->getValue()->toString() << endl;
+                    cout << "to: " << store->getLHSVar()->toString() << endl;
+                }
+            }
+        }
+        //auto args = pag->getFunArgsList(func);
         Callback callback = [pag, ander, svfg](const SVFValue* base, const char* methodName, const char* methodSignature, std::vector<const SVFValue*> args) {
             cout << "base: " << base->toString() << endl;
-
-
             NodeID nodeId = pag->getValueNode(base);
-
             const PointsTo &pts = ander->getPts(nodeId);
             std::vector<PAGNode *> pointsToSet;
             for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
@@ -903,6 +912,40 @@ JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFFunction_getArgumentsNative(JNIEn
         env->SetObjectArrayElement(argumentArray, i, svfArgumentObject);
     }
 
+    return argumentArray;
+}
+/*
+ * Class:     svfjava_SVFIR
+ * Method:    getArgumentValues
+ * Signature: (Lsvfjava/SVFFunction;)[Lsvfjava/SVFValue;
+ */
+JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFIR_getArgumentValues
+        (JNIEnv * env, jobject jthis, jobject jfunc){
+
+    SVFIR* pag = (SVFIR *) getCppReferencePointer(env, jthis);
+    SVFFunction *svfFunction = (SVFFunction *) getCppReferencePointer(env, jfunc);
+
+    jclass svfValueClass = env->FindClass("svfjava/SVFValue");
+
+    auto funArgs = pag->getFunArgsList(svfFunction);
+
+    jobjectArray argumentArray = env->NewObjectArray(funArgs.size(), svfValueClass, nullptr);
+    for (int i = 0; i < funArgs.size(); i++) {
+        const auto &arg = funArgs.at(i);
+        cout << "arg " << arg->toString() << " val " << arg->getValue()->toString() << endl;
+        for (const auto &edge: arg->getOutEdges()) {
+            if (auto store = SVFUtil::dyn_cast<StoreStmt>(edge)) {
+                cout << "arg stored: " << edge->getValue()->toString() << endl;
+                cout << "to: " << store->getLHSVar()->toString() << endl;
+                auto val = store->getLHSVar()->getValue();
+                jobject svfArgumentObject = createCppRefObject(env, "svfjava/SVFValue", val);
+                env->SetObjectArrayElement(argumentArray, i, svfArgumentObject);
+                break;
+            }
+        }
+
+    }
+    cout << "done" << endl;
     return argumentArray;
 }
 

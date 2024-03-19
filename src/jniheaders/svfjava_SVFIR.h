@@ -23,6 +23,14 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getGNode
 JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getValueNode
   (JNIEnv *, jobject, jobject);
 
+/*
+ * Class:     svfjava_SVFIR
+ * Method:    getArgumentValues
+ * Signature: (Lsvfjava/SVFFunction;)[Lsvfjava/SVFValue;
+ */
+JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFIR_getArgumentValues
+  (JNIEnv *, jobject, jobject);
+
 #ifdef __cplusplus
 }
 #endif

@@ -6,4 +6,9 @@ public class SVFIR extends CppReference {
     }
     public native SVFVar getGNode(PointsTo pointsTo);
     public native NodeID getValueNode(SVFValue val);
+
+   /**
+     these values are taken from the PAG
+     */
+    public native SVFValue[] getArgumentValues(SVFFunction func);
 }
