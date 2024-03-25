@@ -12,4 +12,8 @@ public class CppReference {
         }
         return false;
     }
+
+    public int hashCode(){
+        return (int)address;
+    }
 }
