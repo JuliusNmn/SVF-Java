@@ -48,7 +48,7 @@
 #include "jniheaders/svfjava_SVFIR.h"
 #include "jniheaders/svfjava_SVFG.h"
 #include "jniheaders/svfjava_VFGNode.h"
-
+#include <iostream>
 
 using namespace llvm;
 using namespace std;
@@ -881,13 +881,16 @@ JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions(JNIEnv *env, 
     std::vector<const SVFFunction *> functions = svfModule->getFunctionSet();
 
     jclass svfFunctionClass = env->FindClass("svfjava/SVFFunction");
-    jmethodID constructor = env->GetMethodID(svfFunctionClass, "<init>", "(J)V");
+    jmethodID constructor = env->GetMethodID(svfFunctionClass, "<init>", "(JLjava/lang/String;)V");
 
     jobjectArray functionArray = env->NewObjectArray(functions.size(), svfFunctionClass, nullptr);
 
     for (size_t i = 0; i < functions.size(); ++i) {
-        jobject svfFunctionObject = env->NewObject(svfFunctionClass, constructor, (jlong) functions[i]);
-        env->SetObjectArrayElement(functionArray, i, svfFunctionObject);
+    jstring jName = env->NewStringUTF(functions[i]->getName().c_str());
+    cout << functions[i]->getName();
+    jobject svfFunctionObject = env->NewObject(svfFunctionClass, constructor, (jlong) functions[i], (jstring) jName);
+    env->DeleteLocalRef(jName);
+    env->SetObjectArrayElement(functionArray, i, svfFunctionObject);
     }
 
     return functionArray;

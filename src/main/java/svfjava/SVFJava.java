@@ -6,10 +6,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URL;
 
 public class SVFJava {
-    static {
+    public static void init() {
         String libName = System.mapLibraryName("svf-lib");
         System.out.println("Loading " + libName);
         //System.loadLibrary("svf-lib");
@@ -49,14 +48,15 @@ public class SVFJava {
         return lib.getAbsolutePath();
     }
     public static void main(String[] args) {
-        String moduleName = "/home/julius/SVF-Java/libnative.bc";
+        SVFJava.init();
+        String moduleName = "/Users/tobiasroth/Documents/Projects/XLanguage/Native/SVF-Java2/SVF-Java/libnative.ll";
         if (args.length > 0) {
             moduleName = args[0];
         }
         SVFModule module = SVFModule.createSVFModule(moduleName);
         module.listener = new SVFAnalysisListener() {
               public Object nativeToJavaCallDetected(SVFValue base, String methodName, String methodSignature, SVFValue[] args){
-                SVFVar[] basePTS = module.andersen.getPTS(module.pag, base);
+                SVFVar[] basePTS = module.andersen.getPTS(module.programAssignmentGraph, base);
                 System.out.println("points to set for base: " + basePTS.length);
                 for (SVFVar v : basePTS) {
                    SVFValue val = v.getValue();
@@ -66,7 +66,7 @@ public class SVFJava {
               }
           };
         for (SVFFunction f : module.getFunctions()){
-                    SVFValue[] funArgs = module.pag.getArgumentValues(f);
+                    SVFValue[] funArgs = module.programAssignmentGraph.getArgumentValues(f);
                          System.out.println("funArgs: " + funArgs.length);
 
                     for (SVFValue arg : funArgs) {

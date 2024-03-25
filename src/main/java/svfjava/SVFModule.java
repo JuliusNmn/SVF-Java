@@ -2,20 +2,24 @@ package svfjava;
 
 public class SVFModule extends CppReference {
     public SVFAnalysisListener listener;
-    public SVFG svfg;
-    public VFG vfg;
-    public SVFIR pag;
+    public SVFG staticValueFlowGraph;
+    public VFG valueFlowGraph;
+    public SVFIR programAssignmentGraph;
     public Andersen andersen;
-    public PTACallGraph cg;
+    public PTACallGraph callGraph;
     private SVFModule(long address) {
         super(address);
         SVFIRBuilder b = SVFIRBuilder.create(this);
-        pag = b.build();
-        andersen = Andersen.create(pag);
-        cg = andersen.getPTACallGraph();
-        vfg = VFG.create(cg);
+        programAssignmentGraph = b.build();
+        andersen = Andersen.create(programAssignmentGraph);
+        callGraph = andersen.getPTACallGraph();
+        valueFlowGraph = VFG.create(callGraph);
         SVFGBuilder svfgBuilder = SVFGBuilder.create();
-        svfg = svfgBuilder.buildFullSVFG(andersen);
+        staticValueFlowGraph = svfgBuilder.buildFullSVFG(andersen);
+    }
+
+    public static SVFModule createSVFModuleJava(String moduleName){
+       return SVFModule.createSVFModule(moduleName);
     }
 
     public static native SVFModule createSVFModule(String moduleName);
