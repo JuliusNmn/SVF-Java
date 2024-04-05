@@ -886,11 +886,11 @@ JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions(JNIEnv *env, 
     jobjectArray functionArray = env->NewObjectArray(functions.size(), svfFunctionClass, nullptr);
 
     for (size_t i = 0; i < functions.size(); ++i) {
-    jstring jName = env->NewStringUTF(functions[i]->getName().c_str());
-    cout << functions[i]->getName();
-    jobject svfFunctionObject = env->NewObject(svfFunctionClass, constructor, (jlong) functions[i], (jstring) jName);
-    env->DeleteLocalRef(jName);
-    env->SetObjectArrayElement(functionArray, i, svfFunctionObject);
+        jstring jName = env->NewStringUTF(functions[i]->getName().c_str());
+        jobject svfFunctionObject = env->NewObject(svfFunctionClass, constructor, (jlong) functions[i], (jstring) jName);
+        env->DeleteLocalRef(jName);
+        env->DeleteLocalRef(svfFunctionObject);
+        env->SetObjectArrayElement(functionArray, i, svfFunctionObject);
     }
 
     return functionArray;
