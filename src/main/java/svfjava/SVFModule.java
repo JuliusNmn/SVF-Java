@@ -1,21 +1,12 @@
 package svfjava;
-
+import java.util.Set;
+import java.util.HashSet;
 public class SVFModule extends CppReference {
     public SVFAnalysisListener listener;
-    public SVFG staticValueFlowGraph;
-    public VFG valueFlowGraph;
-    public SVFIR programAssignmentGraph;
-    public Andersen andersen;
-    public PTACallGraph callGraph;
+    private long svfg;
+    private long extendedSVFG;
     private SVFModule(long address) {
         super(address);
-        SVFIRBuilder b = SVFIRBuilder.create(this);
-        programAssignmentGraph = b.build();
-        andersen = Andersen.create(programAssignmentGraph);
-        callGraph = andersen.getPTACallGraph();
-        valueFlowGraph = VFG.create(callGraph);
-        SVFGBuilder svfgBuilder = SVFGBuilder.create();
-        staticValueFlowGraph = svfgBuilder.buildFullSVFG(andersen);
     }
 
     public static SVFModule createSVFModuleJava(String moduleName){
@@ -23,7 +14,9 @@ public class SVFModule extends CppReference {
     }
 
     public static native SVFModule createSVFModule(String moduleName);
-    public native SVFFunction[] getFunctions();
+    public native String[] getFunctions();
 
-    public native Object processFunction(SVFFunction function, Object base, Object[] args);
+    public native long[] processFunction(String function, long[] basePTS, long[][] argsPTSs);
+
+
 }

@@ -18,19 +18,18 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule
 /*
  * Class:     svfjava_SVFModule
  * Method:    getFunctions
- * Signature: ()[Lsvfjava/SVFFunction;
+ * Signature: ()[Ljava/lnag/String;
  */
 JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions
-  (JNIEnv *, jobject);
+  (JNIEnv * env, jobject jThis);
 
 /*
  * Class:     svfjava_SVFModule
  * Method:    processFunction
- * Signature: (Lsvfjava/SVFFunction;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+ * Signature: (Ljava/lang/String;[J[J)[J
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
-  (JNIEnv *, jobject, jobject, jobject, jobjectArray);
-
+        (JNIEnv * env, jobject svfModule, jstring functionName, jlongArray basePTS, jobjectArray argsPTSs);
 #ifdef __cplusplus
 }
 #endif

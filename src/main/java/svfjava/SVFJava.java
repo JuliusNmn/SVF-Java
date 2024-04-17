@@ -6,7 +6,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-
+import java.util.Set;
+import java.util.HashSet;
 public class SVFJava {
     public static void init() {
         String libName = System.mapLibraryName("svf-lib");
@@ -40,6 +41,7 @@ public class SVFJava {
         OutputStream out = new FileOutputStream(lib);
         while ((read = in.read(buffer)) != -1) {
             out.write(buffer, 0, read);
+
         }
 
         in.close();
@@ -49,35 +51,23 @@ public class SVFJava {
     }
     public static void main(String[] args) {
         SVFJava.init();
-        String moduleName = "/Users/tobiasroth/Documents/Projects/XLanguage/Native/SVF-Java2/SVF-Java/libnative.ll";
+        String moduleName = "/home/julius/IdeaProjects/opal/DEVELOPING_OPAL/validateCross/src/test/resources/xl_llvm/libnative.ll";
         if (args.length > 0) {
             moduleName = args[0];
         }
         SVFModule module = SVFModule.createSVFModule(moduleName);
         module.listener = new SVFAnalysisListener() {
-              public Object nativeToJavaCallDetected(SVFValue base, String methodName, String methodSignature, SVFValue[] args){
-                SVFVar[] basePTS = module.andersen.getPTS(module.programAssignmentGraph, base);
-                System.out.println("points to set for base: " + basePTS.length);
-                for (SVFVar v : basePTS) {
-                   SVFValue val = v.getValue();
-                   System.out.println("points to " + val);
-               }
-                return null;
+            public long[] nativeToJavaCallDetected(long[] basePTS, String methodName, String methodSignature, long[][] argsPTSs){
+            System.out.println("got pts request for function " + methodName);
+                // dummy implementation
+                // return PTS for call base as return val of function.
+                return basePTS;
+                //return new long[]{};
               }
           };
-        for (SVFFunction f : module.getFunctions()){
-                    SVFValue[] funArgs = module.programAssignmentGraph.getArgumentValues(f);
-                         System.out.println("funArgs: " + funArgs.length);
 
-                    for (SVFValue arg : funArgs) {
-                         System.out.println("argument " + arg);
-
-                    }
-                   Object r = module.processFunction(f, null, null);
-        }
-        //svfg.dump("svfg");
-        //  dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
-        //new SVFJava().runmain(args);
+        long[] resultPTS = module.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn", new long[]{666}, new long[][]{});
+        System.out.println("got pts! " + resultPTS.length);
     }
 
     private native void runmain(String[] args);

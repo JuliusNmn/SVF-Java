@@ -35,20 +35,9 @@
 #include "Util/Options.h"
 #include "jni.h"
 #include "jniheaders/svfjava_SVFJava.h"
-#include "jniheaders/svfjava_Andersen.h"
-#include "jniheaders/svfjava_SVFGBuilder.h"
-#include "jniheaders/svfjava_SVFIRBuilder.h"
 #include "jniheaders/svfjava_SVFJava.h"
 #include "jniheaders/svfjava_SVFModule.h"
-#include "jniheaders/svfjava_VFG.h"
-#include "jniheaders/svfjava_SVFFunction.h"
-#include "jniheaders/svfjava_PointsTo.h"
-#include "jniheaders/svfjava_SVFVar.h"
-#include "jniheaders/svfjava_SVFValue.h"
-#include "jniheaders/svfjava_SVFIR.h"
-#include "jniheaders/svfjava_SVFG.h"
-#include "jniheaders/svfjava_VFGNode.h"
-#include "transformJNICallsPass.h"
+#include "detectJNICalls.h"
 #include <iostream>
 
 using namespace llvm;
@@ -56,521 +45,178 @@ using namespace std;
 using namespace SVF;
 
 
-/*
-Creates a new java instance of a specified CppReference class, 
-initialized with the address of the supplied pointer
-*/
-jobject createCppRefObject(JNIEnv *env, char *classname, const void *pointer) {
-    jclass svfValueClass = env->FindClass(classname);
-    jmethodID valueConstructor = env->GetMethodID(svfValueClass, "<init>", "(J)V");
-    return env->NewObject(svfValueClass, valueConstructor, (jlong) pointer);
-}
-
-static llvm::cl::opt<std::string> InputFilename(cl::Positional,
-                                                llvm::cl::desc("<input bitcode>"), llvm::cl::init("-"));
-
-/*!
- * An example to query alias results of two LLVM values
- */
-SVF::AliasResult aliasQuery(PointerAnalysis *pta, Value *v1, Value *v2) {
-    SVFValue *val1 = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(v1);
-    SVFValue *val2 = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(v2);
-
-    return pta->alias(val1, val2);
-}
-
-/*!
- * An example to print points-to set of an LLVM value
- */
-std::string printPts(PointerAnalysis *pta, NodeID pNodeId ) {
-
-    std::string str;
-    raw_string_ostream rawstr(str);
-    const PointsTo &pts = pta->getPts(pNodeId);
-    for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
-         ii != ie; ii++) {
-        rawstr << " " << *ii << " ";
-        PAGNode *targetObj = pta->getPAG()->getGNode(*ii);
-        if (targetObj->hasValue()) {
-            rawstr << "(" << targetObj->getValue()->toString() << ")\t ";
+// this callback is called for all JNI method invocations.
+// call base and argument PTS are passed
+// method return PTS should be added by calling updatePointsToSet(returnValueNode, ...)
+typedef std::function<set<long>(set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS)> ProcessJavaMethodInvocation;
+// this will be used to request an allocsite id for a Native-side JNI allocation
+typedef std::function<long(char* classname, char* context)> GetJNIAllocSiteId;
+// extends SVFG with alloc nodes for jni java instances using an additional graph.
+// defines a graph traversal function that traverses over both graphs starting from a VFGNode x,
+// returns any REAL (not mirrored) JavaAllocSite that the VFGNode may point to.
+//
+// this is used to get PTS of arguments at a JNI callsite.
+// PTS returned by Java Analysis for function f are added to JavaAllocGraph.
+// mirror of f's return value VFGNode is connected to JavaAllocSites
+// if PTS for a jni cal argument changes, invoke java analysis again.
+class ExtendedSVFG {
+public:
+    ProcessJavaMethodInvocation callback = nullptr;
+    SVFG* svfg;
+    DetectNICalls* detectedJniCalls;
+    ExtendedSVFG(SVFModule* module, SVFG* svfg) : svfg(svfg) {
+        const llvm::Module* lm = LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule();
+        detectedJniCalls = new DetectNICalls();
+        for (const auto &svfFunction: *module) {
+            const llvm::Function* llvmFunction = llvm::dyn_cast<llvm::Function>(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(svfFunction));
+            detectedJniCalls->processFunction(*llvmFunction);
+        }
+        cout << "detected " << detectedJniCalls->detectedJNIInvocations.size() << " JNI invoke sites" << endl;
+        for (const auto &item: detectedJniCalls->detectedJNIInvocations) {
+            cout << "JNI invoke site " << item.second->className << " " << item.second->methodName << endl;
         }
     }
 
-    return rawstr.str();
+    // these PTS are updated when getNativeFunctionPTS is called
+    std::map<const VFGNode*, set<long>*> jniFunctionArgPointsToSets;
 
-}
+    // stores a mapping from svfg nodes to JavaAllocSite mirror
+    // for now, only method return values are mirrored.
+    std::map<NodeID , long> svfgNodeMirrors;
 
-std::string printPts(PointerAnalysis *pta, SVFValue *svfval) {
 
-    NodeID pNodeId = pta->getPAG()->getValueNode(svfval);
-    return printPts(pta, pNodeId);
-}
+    // called from java analysis when PTS for native function call args (+ base) are known
+    set<long> getNativeFunctionPTS(const SVFFunction* function, set<long> callBasePTS, vector<set<long>> argumentsPTS) {
 
-// assumption: no cycles!
-// if targetNode is null, try to find a path that satisfies NodeKinds
-std::vector<const VFGNode *> *findBackwardsPath(const VFGNode *currentNode, const VFGNode *targetNode,
-                                                const std::vector<VFGNode::VFGNodeK> *nodeKinds) {
-
-    if (targetNode && (currentNode->getId() == targetNode->getId())) {
-        // path exists.
-        auto nodes = new std::vector<const VFGNode *>();
-        nodes->push_back(targetNode);
-        return nodes;
-    }
-
-    //cout << "Looking for a path ENDING AT " << currentNode->toString() << endl;
-//    cout << " STARTING AT " << targetNode->toString() << endl;
-
-    for (VFGEdge *edge: currentNode->getInEdges()) {
-        VFGNode *predNode = edge->getSrcNode();
-        //cout << "checking " << predNode->toString() << endl;
-        VFGNode::GNodeK nextKind = predNode->getNodeKind();
-
-        if (nodeKinds->at(0) == nextKind) {
-            // Remove the matched kind from remainingKinds
-            auto nextRemainingKinds = new std::vector<VFGNode::VFGNodeK>(nodeKinds->begin() + 1, nodeKinds->end());
-            if (targetNode == nullptr && nextRemainingKinds->empty()) {
-                auto nodes = new std::vector<const VFGNode *>();
-                nodes->push_back(predNode);
-                return nodes;
-            }
-            if (auto path = findBackwardsPath(predNode, targetNode, nextRemainingKinds)) {
-                path->insert(path->begin(), currentNode);
-                return path;
+        set<long> returnValuePTS;
+        auto args = svfg->getPAG()->getFunArgsList(function);
+        auto baseNode = svfg->getFormalParmVFGNode(args[1]);
+        cout << "getting Return PTS for " << function->toString() << endl;
+        if (!callBasePTS.empty()) {
+            if (auto existingPTS = jniFunctionArgPointsToSets[baseNode]) {
+                existingPTS->insert(callBasePTS.begin(), callBasePTS.end());
             } else {
-                return nullptr;
+                auto newPTS = new set<long>(callBasePTS);
+                jniFunctionArgPointsToSets[baseNode] = newPTS;
             }
         }
-    }
-    return nullptr;
-}
 
-const char* getStringParameterInitializer(const SVFValue* ptrParameter) {
-    const GetElementPtrInst* loadStr = llvm::dyn_cast<llvm::GetElementPtrInst>(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(ptrParameter));
-    if (loadStr == nullptr) {
-        return nullptr;
-    }
-    auto strVal = loadStr->getOperand(0);
-    auto strConst = llvm::dyn_cast<llvm::ConstantDataArray>(strVal);
-    auto strGlobal= llvm::dyn_cast<llvm::GlobalVariable>(strVal);
-    auto initializer = strGlobal->getInitializer();
-    ConstantDataSequential* str = llvm::dyn_cast<ConstantDataSequential >(initializer);
-    StringRef s = str->getAsCString();
-    return s.data();
-}
-
-/*!
- * An example to query/collect all successor nodes from a ICFGNode (iNode) along control-flow graph (ICFG)
- */
-void traverseOnICFG(ICFG *icfg, const Instruction *inst) {
-    SVFInstruction *svfinst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(inst);
-
-    ICFGNode *iNode = icfg->getICFGNode(svfinst);
-    FIFOWorkList<const ICFGNode *> worklist;
-    Set<const ICFGNode *> visited;
-    worklist.push(iNode);
-
-    /// Traverse along VFG
-    while (!worklist.empty()) {
-        const ICFGNode *iNode = worklist.pop();
-        for (ICFGNode::const_iterator it = iNode->OutEdgeBegin(), eit =
-                iNode->OutEdgeEnd(); it != eit; ++it) {
-            ICFGEdge *edge = *it;
-            ICFGNode *succNode = edge->getDstNode();
-            if (visited.find(succNode) == visited.end()) {
-                visited.insert(succNode);
-                worklist.push(succNode);
-            }
-        }
-    }
-}
-
-/*!
- * An example to query/collect all the definitions
- * (Formal Parameters or Actual Return Values)
- * of a value along value-flow graph (VFG)
- */
-void findDefinitions(const SVFG *vfg, const PAGNode* pNode, vector<const VFGNode*>& definitions) {
-    const VFGNode *vNode = vfg->getDefSVFGNode(pNode);
-    FIFOWorkList<const VFGNode *> worklist;
-    Set<const VFGNode *> visited;
-    worklist.push(vNode);
-    while (!worklist.empty()) {
-        const VFGNode *vNode = worklist.pop();
-        for (VFGNode::const_iterator it = vNode->InEdgeBegin(), eit =
-                vNode->InEdgeEnd(); it != eit; ++it) {
-            VFGEdge *edge = *it;
-            VFGNode *predNode = edge->getSrcNode();
-            VFGNode::GNodeK kind = predNode->getNodeKind();
-            if (visited.find(predNode) == visited.end()) {
-                visited.insert(predNode);
-                if (kind == VFGNode::VFGNodeK::FParm || kind == VFGNode::VFGNodeK::ARet) {
-                    definitions.push_back(predNode);
-                }
-                worklist.push(predNode);
-            }
-        }
-    }
-
-
-    /// Collect all LLVM Values
-    for (Set<const VFGNode *>::const_iterator it = visited.begin(), eit = visited.end(); it != eit; ++it) {
-        const VFGNode *node = *it;
-        /// can only query VFGNode involving top-level pointers (starting with % or @ in LLVM IR)
-        // PAGNode* pNode = vfg->getLHSTopLevPtr(node);
-        // Value* val = pNode->getValue();
-    }
-}
-
-/**
- * return true if instruction is
- * %4 = alloca %struct.JNINativeInterface_**, align 8 "
- */
-bool isAllocaJNINativeInterface(const llvm::AllocaInst *ai) {
-    static llvm::StringRef jniStructName("struct.JNINativeInterface_");
-    auto t1 = ai->getAllocatedType();
-    if (!t1->isPointerTy()) {
-        return false;
-    }
-    auto t2 = t1->getContainedType(0);
-    if (!t2->isPointerTy()) {
-        return false;
-    }
-    auto t3 = t2->getContainedType(0);
-    if (!t3->isStructTy()) {
-        return false;
-    }
-
-    return t3->getStructName().equals(jniStructName);
-}
-
-int getOffset(const llvm::GetElementPtrInst *gepi) {
-    APInt ap_offset(32, 0, false);
-    gepi->accumulateConstantOffset(LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule()->getDataLayout(), ap_offset);
-    int offset = ap_offset.getSExtValue();
-    return offset;
-}
-// if the given parameter value was passed to the function as a parameter, return the parameter node.
-const FormalParmVFGNode* getDefinitionIfFormalParameter(const SVFG* svfg, const SVFValue* param)  {
-    auto pag = svfg->getPAG();
-    auto paramDefNode = svfg->getDefSVFGNode(pag->getGNode(pag->getValueNode(param)));
-    std::vector<VFGNode::VFGNodeK> loadParameterPath;
-    loadParameterPath.push_back(VFGNode::VFGNodeK::Store);
-    loadParameterPath.push_back(VFGNode::VFGNodeK::FParm);
-    if (auto path = findBackwardsPath(paramDefNode, nullptr, &loadParameterPath)) {
-        auto paramNode = path->at(1);
-        return SVFUtil::dyn_cast<FormalParmVFGNode>(paramNode);
-    }
-    return nullptr;
-}
-
-
-// finds the definition for a callsite parameter, if the parameter is returned at a callsite in the same function it was used in.
-const SVFCallInst *getDefinitionIfRetVal(SVFG *svfg, const SVFValue *parameter) {
-    auto parameterSVGNode = svfg->getDefSVFGNode(svfg->getPAG()->getGNode(svfg->getPAG()->getValueNode(parameter)));
-    std::vector<VFGNode::VFGNodeK> methodIdDefinitionPathKinds;
-    methodIdDefinitionPathKinds.push_back(VFGNode::VFGNodeK::Store);
-    methodIdDefinitionPathKinds.push_back(VFGNode::VFGNodeK::ARet);
-    auto methodIDDefinitionPath = findBackwardsPath(parameterSVGNode, nullptr, &methodIdDefinitionPathKinds);
-    if (methodIDDefinitionPath == nullptr) {
-        cout << "WARNING: unable to determine MethodID!" << endl;
-        return nullptr;
-    }
-    auto candidateGetMethodIDNode = methodIDDefinitionPath->at(1);
-
-    auto candidateGetMethodID = candidateGetMethodIDNode->getValue();
-    cout << "Candidate getmethodID: " << candidateGetMethodID->toString() << endl;
-    auto callGetMethodID = SVFUtil::dyn_cast<SVFCallInst>(candidateGetMethodID);
-    return callGetMethodID;
-}
-
-
-const SVFValue* getLoadedValue(SVFIR* pag, const SVFValue* val) {
-    NodeID nodeId = pag->getValueNode(val);
-    auto gnodepag = pag->getGNode(nodeId);
-    for (const auto &loadEdge: gnodepag->getIncomingEdges(SVFStmt::PEDGEK::Load)) {
-        cout << loadEdge->toString() << endl;
-        if (auto loadStmt = SVFUtil::dyn_cast<LoadStmt>(loadEdge)) {
-            auto rhs = loadStmt->getRHSVar();
-            auto val = rhs->getValue();
-            return val;
-        }
-    }
-    return nullptr;
-}
-// how to store java instances in PAG?
-// - jni allocations
-// - points-to-set from OPAL?
-//      - passed as parameter
-//      - function return value
-// => create new nodes in PAG, corresponding to OPAL AllocSite
-// keep track of created nodes
-// allow registering AllocSite for formal parameters
-//      -
-// fields?
-// - when field access is discovered, callback with base object PAGNodes
-
-
-// - parameters -> FormalParameter Nodes, already exist
-// - jclass?
-
-typedef std::function<PAGNode*(const SVFValue*,const char *,const char *,std::vector<const SVFValue*>)> Callback;
-jobject processFunction(SVFModule* module, SVFIR* pag, SVFIRBuilder* builder, SVFG* svfg, VFG* vfg, const SVFFunction* func, Callback cb) {
-    auto returnJobject = module->getSVFFunction("returnJobjectNullPtr");
-    cout << "processing function " << func->getName() << endl;
-    cout << "vfg node count: " << vfg->nodeNum << endl;
-    // cursed c++ actually works
-    // CALCULATE OFFSETS OF JNI FUNCTIONS IN JNI STRUCT
-    JNINativeInterface_ j{};
-    const long offset_GetObjectClass = (long) (&j.GetObjectClass) - (long) (&j);
-    const long offset_GetMethodID = (long) (&j.GetMethodID) - (long) (&j);
-    const long offset_CallVoidMethod = (long) (&j.CallVoidMethod) - (long) (&j);
-    const long offset_CallObjectMethod = (long) (&j.CallObjectMethod) - (long) (&j);
-    // offset for GetObjectClass: 248
-    // offset for GetMethodID: 264
-    // offset for CallVoidMethod: 488
-
-    VFGNode *allocaJNInode = nullptr;
-    cout << "checking for JNIStruct parameter " << endl;
-    //vector<const SVFVar *> funcArgs = pag->getFunArgsList(func);
-    auto vfgNodes = vfg->getVFGNodes(func);
-    cout << "vfg nodes for function: " << vfgNodes.size() << endl;
-    for (const auto &vfgNode: vfgNodes) {
-        if (const AddrVFGNode *addrVfgNode = SVFUtil::dyn_cast<AddrVFGNode>(vfgNode)) {
-            auto edge = addrVfgNode->getPAGEdge();
-            if (const auto addrStmt = SVFUtil::dyn_cast<AddrStmt>(edge)) {
-                auto val = addrStmt->getValue();
-                auto llvmVal = LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(val);
-                if (const auto ai = llvm::dyn_cast<llvm::AllocaInst>(llvmVal)) {
-                    if (isAllocaJNINativeInterface(ai)) {
-                        allocaJNInode = vfgNode;
-                        cout << " found JNIStruct parameter " << endl;
-                    }
-                }
-            }
-        }
-    }
-    Map<const SVFCallInst *, int> jvmCallOffsets;
-    if (allocaJNInode) {
-        cout << "Looking for CallVoidMethod invocations" << endl;
-        for (const auto &bb: func->getBasicBlockList()) {
-            for (const auto &inst: bb->getInstructionList()) {
-                //cout << inst->toString() << inst->getType()->toString() << endl;
-                if (const auto *call = SVFUtil::dyn_cast<SVFCallInst>(inst)) {
-                    //auto callNode = icfg->getCallICFGNode(inst);
-                    //cout << "found call " << call->toString() << " ICFG NodeID: " << callNode->getId() << endl;
-                    const SVFValue *func = call->getCalledOperand();
-
-                    auto pagValueNode = pag->getValueNode(func);
-                    auto pagNode = pag->getGNode(pag->getValueNode(func));
-                    auto geps = pag->getValueEdges(func);
-                    cout << pagNode->toString() << endl;
-                    auto callTargetSVFGNode = svfg->getDefSVFGNode(pagNode);
-                    std::vector<VFGNode::VFGNodeK> loadOffsetFunctionFromJNI;
-                    loadOffsetFunctionFromJNI.push_back(VFGNode::VFGNodeK::Gep);
-                    loadOffsetFunctionFromJNI.push_back(VFGNode::VFGNodeK::Load);
-                    loadOffsetFunctionFromJNI.push_back(VFGNode::VFGNodeK::Load);
-                    loadOffsetFunctionFromJNI.push_back(VFGNode::VFGNodeK::Addr);
-                    if (auto path = findBackwardsPath(callTargetSVFGNode, allocaJNInode,
-                                                      &loadOffsetFunctionFromJNI)) {
-                        //cout << path->size() << endl;
-                        auto getElementPointerNode = (*path)[1];
-                        auto llvmVal = LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(
-                                getElementPointerNode->getValue());
-                        if (const auto gepi = llvm::dyn_cast<llvm::GetElementPtrInst>(llvmVal)) {
-                            int offset = getOffset(gepi);
-                            cout << "offset: " << offset << endl;
-                            jvmCallOffsets[call] = offset;
-                        }
-                    } else {
-                        cout << "no path found" << endl;
-                    }
-                }
-
-            }
-        }
-    } else {
-        cout << "no jni struct found. aborting" << endl;
-        return nullptr;
-    }
-
-    for (const auto &jvmCallAndOffset: jvmCallOffsets) {
-        int offset = jvmCallAndOffset.second;
-        auto callInst = jvmCallAndOffset.first;
-        if (offset == offset_CallVoidMethod || offset == offset_CallObjectMethod) {
-            // void (JNICALL *CallVoidMethod)
-            //      (JNIEnv *env, jobject obj, jmethodID methodID, ...);
-            auto base = callInst->getArgOperand(1);
-            auto methodID = callInst->getArgOperand(2);
-            auto methodIDParam = svfg->getSVFGNode(svfg->getPAG()->getValueNode(methodID));
-            cout << methodIDParam->toString() << endl;
-            auto callGetMethodID = getDefinitionIfRetVal(svfg, methodID);
-            if (callGetMethodID == nullptr || jvmCallOffsets[callGetMethodID] != offset_GetMethodID) {
-                cout << "WARNING: unable to determine MethodID!" << endl;
-                continue;
-            }
-
-
-            // jmethodID (JNICALL *GetMethodID)
-            //      (JNIEnv *env, jclass clazz, const char *name, const char *sig);
-            auto jclass = callGetMethodID->getArgOperand(1);
-            auto methodNamePtr = callGetMethodID->getArgOperand(2);
-            auto methodSignaturePtr = callGetMethodID->getArgOperand(3);
-            auto jclassPagNode = pag->getGNode(pag->getValueNode(jclass));
-            //auto jclassPagONode = pag->getGNode(pag->getObjectNode(jclass));
-            //auto jclassVFGNode = svfg->getDefSVFGNode(jclassPagNode);
-            // auto jclassVFGNode = svfg->getSVFGNode(svfg->getPAG()->getValueNode(jclass));
-            auto callGetOrFindClass = getDefinitionIfRetVal(svfg, jclass);
-            Constant *c;
-
-            // this could be:
-            // 1. an argument
-            // 2. a call to FindClass()
-            // 3. a call to GetObjectClass()
-            // this proof of concept only handles GetObjectClass for now
-            //auto candidateGetClass = jclassVFGNode->getValue();
-            //auto callGetOrFindClass = SVFUtil::dyn_cast<SVFCallInst>(candidateGetClass);
-            if (callGetOrFindClass == nullptr) {
-                cout << "WARNING: unable to determine jclass" << endl;
-                continue;
-            }
-
-            if (jvmCallOffsets[callGetOrFindClass] == offset_GetObjectClass) {
-                auto jobject = callGetOrFindClass->getArgOperand(1);
-                // now check where this jobject came from
-
-                // is it a param?
-                if (auto getClassBaseObjectParamNode = getDefinitionIfFormalParameter(svfg, jobject)) {
-                    cout << "GetClass base object is param: " << getClassBaseObjectParamNode->toString() << endl;
-                    getClassBaseObjectParamNode->getId();
-
-                }
-            } else {
-                cout << "warning. findclass not supported yet, only getClass.." << endl;
-            }
-            cout << methodNamePtr->toString() << endl;
-
-            auto methodName = getStringParameterInitializer(methodNamePtr);
-            auto methodSignature = getStringParameterInitializer(methodSignaturePtr);
-
-            cout << "Method name: " << methodName << endl << "Method Signature: " << methodSignature << endl;
-            /*
-            // now match jni callsite base object + args to passed java base object+args, then call callback
-            // todo: handle all other cases. this means value returned from function (c or jni), value is base type, value was constructed etc...
-
-            auto callsiteBaseDefinition = svfg->getDefSVFGNode(pag->getGNode(pag->getValueNode(base)));
-
-            // definition of parameters passed to function
-            // only if they were passed from java
-            auto potentialParameterBase = getDefinitionIfFormalParameter(svfg, base);
-
-            // formal parameter nodes of jni function, used for matching
-            // 0st arg is JNI struct
-            auto formalParamBaseObject = svfg->getFormalParmVFGNode(pag->getGNode(pag->getValueNode(func->getArg(1))));
-            vector<FormalParmVFGNode*> formalParameters;
-            formalParameters.push_back(formalParamBaseObject);
-            for (int i = 2; i < func->arg_size(); i++){
-                auto formalParamArg = svfg->getFormalParmVFGNode(pag->getGNode(pag->getValueNode(func->getArg(i))));
-                formalParameters.push_back(formalParamArg);
-            }
-
-            // cout << "Callsite base, arg0" << endl;
-            // cout << potentialParameterBase->toString() << endl;
-            // cout << potentialParameterArg0->toString() << endl;
-            // cout << "Argument nodes" << endl;
-            // cout << callsiteBaseDefinition->toString() << endl;
-            // cout << formalParameters.at(0)->toString() << endl;
-            // cout << formalParameters.at(1)->toString() << endl;
-
-            // match passed arguments against formal parameters
-
-            vector<jobject> callsiteAbstractParameters;
-            for (int i = 3; i < callInst->arg_size(); i++) {
-                const SVFValue* arg = callInst->getArgOperand(i);
-                if (auto potentialParameter = getDefinitionIfFormalParameter(svfg, arg)){
-                    auto idx = std::find(formalParameters.begin(), formalParameters.end(), potentialParameter);
-                    if (idx != formalParameters.end()) {
-                        if (idx == formalParameters.begin()) {
-                            callsiteAbstractParameters.push_back(abstractBase);
-                        } else {
-                            callsiteAbstractParameters.push_back(abstractArgs.at(idx - formalParameters.begin() - 1));
-                        }
-                    } else {
-                        callsiteAbstractParameters.push_back(nullptr);
-                    }
+        for (int i = 0; i < argumentsPTS.size(); i++) {
+            auto argNode = svfg->getFormalParmVFGNode(args[i + 3]);
+            auto argPTS = argumentsPTS[i];
+            if (!argPTS.empty()) {
+                if (auto existingPTS = jniFunctionArgPointsToSets[argNode]) {
+                    existingPTS->insert(argPTS.begin(), argPTS.end());
                 } else {
-                    cout << "warning: callsite passed parameter was not passed as argument. will be null" << endl;
-                    callsiteAbstractParameters.push_back(nullptr);
+                    auto newPTS = new set<long>(argPTS);
+                    jniFunctionArgPointsToSets[argNode] = newPTS;
+                }
+            }
+        }
+        for (const auto &vfgNode: svfg->getVFGNodes(function)) {
+            if (vfgNode->getNodeKind() == VFGNode::VFGNodeK::FRet){
+                // should only be one node
+                findJavaAllocations(vfgNode, returnValuePTS);
+            }
+        }
+        return returnValuePTS;
+    }
+
+
+    set<long> getReturnPTSForJNICallsite(const SVFCallInst* call, const JNIInvocation* jniInv) {
+        auto pag = svfg->getPAG();
+        // this is a jni call. now get base + args PTS and perform callback.
+        auto base = call->getArgOperand(1);
+        auto baseNode = pag->getGNode(pag->getValueNode(base));
+        set<long> basePTS;
+        findJavaAllocations(baseNode, basePTS);
+
+        std::vector<std::set<long>> argumentsPTS;
+        for (int i = 3; i < call->getNumArgOperands(); i++){
+            auto arg = call->getArgOperand(i);
+            auto argNode = pag->getGNode(pag->getValueNode(arg));
+            set<long> argPTS;
+
+            findJavaAllocations(argNode, argPTS);
+            argumentsPTS.push_back(argPTS);
+        }
+        cout << "requesting return PTS for function " << jniInv->methodName << endl;
+        return callback(basePTS, jniInv->className, jniInv->methodName, jniInv->methodSignature, argumentsPTS);
+
+    }
+    void findJavaAllocations(const PAGNode* pNode, set<long>& allocations) {
+        const VFGNode *startNode = svfg->getDefSVFGNode(pNode);
+        findJavaAllocations(startNode, allocations);
+    }
+
+    void getJavaAllocations(const ICFGNode* retVal) {
+        Set<const ICFGNode*> visited;
+    }
+
+    // traverses through SVFG and JavaAllocGraph at the same time to calculate PTS for a node in the VFG
+    // this will be called for each argument at a JNI method invocation
+    void findJavaAllocations(const VFGNode* startNode, set<long>& allocations) {
+        FIFOWorkList<const VFGNode *> worklist;
+        Set<const VFGNode *> visited;
+        worklist.push(startNode);
+        while (!worklist.empty()) {
+            const VFGNode *vNode = worklist.pop();
+            if (vNode->getNodeKind() == VFGNode::VFGNodeK::ARet) {
+                const ActualRetVFGNode* ret = dyn_cast<const ActualRetVFGNode>(vNode);
+                const SVFCallInst* callInst = dyn_cast<SVFCallInst>(ret->getCallSite()->getCallSite());
+                const llvm::CallBase* cb = llvm::dyn_cast<llvm::CallBase>(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(callInst));
+                if (const JNIInvocation* jniInv = detectedJniCalls->detectedJNIInvocations[cb]){
+                    auto callSitePts = getReturnPTSForJNICallsite(callInst, jniInv);
+                    allocations.insert(callSitePts.begin(), callSitePts.end());
+                }
+
+            }
+
+            if (set<long>* pts = jniFunctionArgPointsToSets[vNode]) {
+                for (const auto &alloc: *pts) {
+                    allocations.insert(alloc);
                 }
             }
 
-            jobject baseJobject = nullptr;
-            auto idx = std::find(formalParameters.begin(), formalParameters.end(),potentialParameterBase);
-            if (idx != formalParameters.end()){
-                if (idx == formalParameters.begin()){
-                    baseJobject = abstractBase;
-                } else {
-                    baseJobject = abstractArgs.at(idx - formalParameters.begin() - 1);
+            for (auto it = vNode->InEdgeBegin(), eit =
+                    vNode->InEdgeEnd(); it != eit; ++it) {
+                VFGEdge *edge = *it;
+                VFGNode *predNode = edge->getSrcNode();
+                VFGNode::GNodeK kind = predNode->getNodeKind();
+                if (visited.find(predNode) == visited.end()) {
+                    visited.insert(predNode);
+                    worklist.push(predNode);
                 }
             }
-            */
-
-            vector<const SVFValue*> callsiteParameterNodes;
-            for (int i = 3; i < callInst->arg_size(); i++) {
-                const SVFValue* arg = callInst->getArgOperand(i);
-                const SVFValue* argiLoaded = getLoadedValue(pag, arg);
-                callsiteParameterNodes.push_back(argiLoaded ? argiLoaded : arg);
-
-            }
-
-            cout << "detected jni call." << endl;
-            if (offset == offset_CallObjectMethod) {
-                const SVFValue *baseLoaded = getLoadedValue(pag, base);
-                PAGNode *callRetVal = cb(baseLoaded ? baseLoaded : base, methodName, methodSignature,
-                                         callsiteParameterNodes);
-                auto callNode = pag->getValueNode(callInst);
-                //NodeID dummyNode = pag->addDummyObjNode(SVFType::getSVFPtrType());
-                // builder->addEdge(dummyNode, callNode, SVF::SVFStmt::Copy );
-                //andersen->addPts(callNode, dummyNode);
-                builder->setCurrentLocation(func, nullptr);
-                //auto as = builder->addAddrEdge(dummyNode, callNode);
-
-                CallICFGNode *callICFGNode = pag->getICFG()->getCallICFGNode(callInst);
-                auto returnJobjectNode = pag->getReturnNode(returnJobject);
-                // todo: which func to use?
-                FunExitICFGNode *exitICFGNode = pag->getICFG()->getFunExitICFGNode(returnJobject);
-                //builder->addRetEdge(returnJobjectNode, callNode, callICFGNode, exitICFGNode);
-                auto joNode = pag->getValueNode(returnJobject);
-                auto calledOperand = callInst->getCalledOperand();
-                //const SVFValue* svfcalledval = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(callInst->getCalledOperand());
-
-                auto cg = svfg->getPTA()->getPTACallGraph();
-                //cg->addIndirectCallGraphEdge(callICFGNode, func, returnJobject);
-                //pag->addIndirectCallsites(callICFGNode, pag->getValueNode(calledOperand));
-                //cout << as->toString() << endl;
-                //pag->edge
-                cout << callRetVal << endl;
+            for (const auto &outEdge: vNode->getOutEdges()) {
+                VFGNode* succNode = outEdge->getDstNode();
+                VFGNode::GNodeK kind = succNode->getNodeKind();
+                if (kind == VFGNode::VFGNodeK::Store) {
+                    if (visited.find(succNode) == visited.end()) {
+                        visited.insert(succNode);
+                        worklist.push(succNode);
+                    }
+                }
             }
 
         }
-
     }
-    return nullptr;
-}
+};
+
+
 
 
 int main(int argc, char **argv) {
 
     std::vector<std::string> moduleNameVec;
-    moduleNameVec.push_back("/home/julius/IdeaProjects/opal/DEVELOPING_OPAL/validateCross/src/test/resources/xl_llvm/libnative.bc");
+    moduleNameVec.push_back("/home/julius/IdeaProjects/opal/DEVELOPING_OPAL/validateCross/src/test/resources/xl_llvm/libnative.ll");
     if (Options::WriteAnder() == "ir_annotator") {
         LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
     }
 
     SVFModule *svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
-    TransformJNICallsPass pass;
+
     auto lm = LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule();
-    pass.runOnModule(*lm);
 
 
     /// Build Program Assignment Graph (SVFIR)
@@ -599,112 +245,26 @@ int main(int argc, char **argv) {
     SVFG *svfg = svfBuilder.buildFullSVFG(ander);
     svfg->dump("svfg");
 
-    for (const SVFFunction *func: *svfModule) {
-        cout << "function " << func->getName() << " argcount: " << func->arg_size() << endl;
-        for (u32_t i = 0; i < func->arg_size(); i++) {
-            const SVFArgument *arg = func->getArg(i);
-            SVFValue *val = (SVFValue *) arg;
-            auto d = pag->addDummyObjNode(SVFType::getSVFPtrType());
-            ander->addPts(pag->getValueNode(val), d);
-            cout << "arg " << i << " pts: " << printPts(ander, val) << endl;
-        }
+    cout << endl;
+    ExtendedSVFG* e = new ExtendedSVFG(svfModule, svfg);
+    e->callback = [](set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS) {
+        //  make function return this
+        return callBasePTS;
+    };
 
+    int id = 0;
+    auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn");
+    auto allocSite = 666;
+    set<long> returnValuePTS;
+    returnValuePTS.insert(allocSite);
+    vector<set<long>> argumentsPTS;
+    auto pts = e->getNativeFunctionPTS(func, returnValuePTS, argumentsPTS);
 
-        auto retNode = pag->getReturnNode(func);
-        cout << retNode << endl;
-
-        if (pag->funHasRet(func)) {
-            const SVFVar* ret = pag->getFunRet(func);
-            cout << ret->toString() << endl;
-            if (func->arg_size()) {
-                for (const auto &item: pag->getFunArgsList(func)) {
-                    cout << "param " << item->toString() << endl;
-                }
-            }
-
-            //auto nn = svfg->getActualRetVFGNode(ret);
-            //cout << nn->toString() << endl;
-            auto def = svfg->getDefSVFGNode(ret);
-            cout << "ret def " << def->toString() << endl;
-            auto retDefNode = pag->getReturnNode(func);
-            cout << "ret " << ret->toString() << " pts: " << printPts(ander, retDefNode) << endl;
-
-            std::vector<const VFGNode*> definitions;
-            findDefinitions(svfg, ret, definitions);
-            for (const auto &def: definitions) {
-                cout << "retval definition " << def->toString() << endl;
-            }
-            for (const auto &item: ander->getPts(ret->getId())) {
-                cout << "retval points to " << item << endl;
-            }
-        }
-
-        //func->getExitBB()->getTerminator()->
-        if (func->getName() == "print") {
-            const SVFValue *value = func->getArg(0);
-            /// Collect uses of an LLVM Value
-            //traverseOnVFG(svfg, value);
-
-        }
-        //         std::string typeStr;
-        //         raw_string_ostream typeStream(typeStr);
-        //         type->print(typeStream);
-        jobject base = new _jobject();
-        std::vector<jobject> args;
-        args.push_back(new _jobject());
-        if (func->arg_size()) {
-            auto funArgs = pag->getFunArgsList(func);
-            for (const auto &arg: funArgs) {
-                cout << "arg " << arg->toString() << " val " << arg->getValue()->toString() << endl;
-
-                for (const auto &edge: arg->getOutEdges()) {
-                    if (auto store = SVFUtil::dyn_cast<StoreStmt>(edge)) {
-                        cout << "arg stored: " << edge->getValue()->toString() << endl;
-                        cout << "to: " << store->getLHSVar()->toString() << endl;
-                    }
-                }
-            }
-        }
-        //auto args = pag->getFunArgsList(func);
-        Callback callback = [pag, ander, svfg](const SVFValue* base, const char* methodName, const char* methodSignature, std::vector<const SVFValue*> args) {
-            cout << "base: " << base->toString() << endl;
-            NodeID nodeId = pag->getValueNode(base);
-            const PointsTo &pts = ander->getPts(nodeId);
-            std::vector<PAGNode *> pointsToSet;
-            for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
-                 ii != ie; ii++) {
-                PAGNode *target = pag->getGNode(*ii);
-                cout << "base pts " << target->toString() << endl;
-                pointsToSet.push_back(target);
-            }
-            auto svfgnode = svfg->getSVFGNode(nodeId);
-            for (const auto &item: args) {
-                NodeID nodeId = pag->getValueNode(item);
-                const PointsTo &pts = ander->getPts(nodeId);
-                for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
-                     ii != ie; ii++) {
-                    PAGNode *target = pag->getGNode(*ii);
-                    cout << "base pts " << target->toString() << endl;
-                    pointsToSet.push_back(target);
-                }
-            }
-
-            return nullptr;
-        };
-        processFunction(svfModule, pag, &builder, svfg, vfg, func, callback);
-
-    }
-
+    cout << pts.size() << endl;
 
 
     //pag doesn't change if ander changes
-     pag->dump("pag2");
-    callgraph->dump("cg");
-    Andersen *ander2 = AndersenWaveDiff::createAndersenWaveDiff(pag);
 
-    SVFGBuilder svfBuilder2;
-    SVFG *svfg2 = svfBuilder2.buildFullSVFG(ander2);
-    svfg2->dump("svfg2");
 
     /// Collect all successor nodes on ICFG
     /// traverseOnICFG(icfg, value);
@@ -731,66 +291,149 @@ void *getCppReferencePointer(JNIEnv *env, jobject obj) {
 }
 
 
+// Function to convert jlongArray to std::set<long long>
+std::set<long> jlongArrayToSet(JNIEnv *env, jlongArray arr) {
+    std::set<long> resultSet;
+
+    // Get array length
+    jsize len = env->GetArrayLength(arr);
+
+    // Get array elements
+    jlong *elements = env->GetLongArrayElements(arr, nullptr);
+
+    // Add elements to the set
+    for (int i = 0; i < len; ++i) {
+        resultSet.insert(elements[i]);
+    }
+
+    // Release array elements
+    env->ReleaseLongArrayElements(arr, elements, JNI_ABORT);
+
+    return resultSet;
+}
+
 /*
  * Class:     svfjava_SVFModule
  * Method:    processFunction
- * Signature: (Lsvfjava/SVFFunction;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+ * Signature: (Ljava/lang/String;[J[J)[J
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
-        (JNIEnv * env, jobject svfModule, jobject svfFunction, jobject base, jobjectArray args) {
+        (JNIEnv * env, jobject svfModule, jstring functionName, jlongArray basePTS, jobjectArray argsPTSs) {
+    // get data structures (SVFModule, SVFFunction, SVFG, ExtendedSVFG)
     SVFModule *module = static_cast<SVFModule *>(getCppReferencePointer(env, svfModule));
-    jclass svfModuleClass = env->GetObjectClass(svfModule);
-    SVFFunction *func = static_cast<SVFFunction *>(getCppReferencePointer(env, svfFunction));
-    jfieldID pagField = env->GetFieldID(svfModuleClass, "pag", "Lsvfjava/SVFIR;");
-    SVFIR *pag = static_cast<SVFIR *>(getCppReferencePointer(env, env->GetObjectField(svfModule, pagField)));
-    jfieldID vfgField = env->GetFieldID(svfModuleClass, "vfg", "Lsvfjava/VFG;");
-    VFG *vfg = static_cast<VFG *>(getCppReferencePointer(env, env->GetObjectField(svfModule, vfgField)));
-    jfieldID svfgField = env->GetFieldID(svfModuleClass, "svfg", "Lsvfjava/SVFG;");
-    SVFG *svfg = static_cast<SVFG *>(getCppReferencePointer(env, env->GetObjectField(svfModule, svfgField)));
+    assert(module);
+    const char* functionNameStr = env->GetStringUTFChars(functionName, NULL);
+    const SVFFunction* function = module->getSVFFunction(functionNameStr);
+    if (function) {
+        cout << " found function " << function->toString() << endl;
 
-    jobject listener = env->GetObjectField(svfModule, env->GetFieldID(svfModuleClass, "listener", "Lsvfjava/SVFAnalysisListener;"));
-    jmethodID listenerCallback = env->GetMethodID(env->GetObjectClass(listener), "nativeToJavaCallDetected", "(Lsvfjava/SVFValue;Ljava/lang/String;Ljava/lang/String;[Lsvfjava/SVFValue;)Ljava/lang/Object;");
+    } else {
+        cout << "function not found: " << functionNameStr << endl;
+        return nullptr;
+    }
+
+    jclass svfModuleClass = env->GetObjectClass(svfModule);
+    jfieldID svfgField = env->GetFieldID(svfModuleClass, "svfg", "J");
+    assert(svfgField);
+    SVFG *svfg = static_cast<SVFG *>((void*)env->GetLongField(svfModule, svfgField));
+    assert(svfg);
+    jfieldID extendedSVFGField = env->GetFieldID(svfModuleClass, "extendedSVFG", "J");
+    assert(extendedSVFGField);
+    ExtendedSVFG* e = static_cast<ExtendedSVFG *>((void*)env->GetLongField(svfModule, extendedSVFGField));
+    assert(e);
+
+    cout << "svfg: " << (long)svfg << endl;
+    cout << "extended svfg: " << (long)e << endl;
+
+    auto pag = svfg->getPAG();
+    assert(pag);
+    auto args = svfg->getPAG()->getFunArgsList(function);
+    set<long> basePTSSet = jlongArrayToSet(env, basePTS);
+    vector<set<long>> argsPTSsVector;
+    // Get array length
+    jsize argsCount = env->GetArrayLength(argsPTSs);
+
+    // Iterate over args
+    for (int i = 0; i < argsCount; ++i) {
+        // Get the arg PTS (which is a jlongArray)
+        jlongArray rowArray = (jlongArray) env->GetObjectArrayElement(argsPTSs, i);
+        set<long> rowSet = jlongArrayToSet(env, rowArray);
+        // Add the PTS to the args PTS vector
+        argsPTSsVector.push_back(rowSet);
+    }
+    jfieldID listenerField = env->GetFieldID(svfModuleClass, "listener", "Lsvfjava/SVFAnalysisListener;");
+    assert(listenerField);
+    jobject listener = env->GetObjectField(svfModule, listenerField);
+    assert(listener);
+    // public Set<JavaAllocSite> nativeToJavaCallDetected(Set<JavaAllocSite> base, String methodName, String methodSignature, Set<JavaAllocSite>[] args);
+
+    jmethodID listenerCallback = env->GetMethodID(env->GetObjectClass(listener), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;[[J)[J");
     assert(listenerCallback);
-    Callback callback = [env, listener, listenerCallback](const SVFValue* base, const char* methodName, const char* methodSignature, std::vector<const SVFValue*> args) {
+    e->callback = [env, listener, listenerCallback](set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS) {
         cout << "calling java svf listener. detected method call to " << methodName << " signature " << methodSignature << endl;
         // Convert char* to Java strings
         jstring jMethodName = env->NewStringUTF(methodName);
         jstring jMethodSignature = env->NewStringUTF(methodSignature);
-
-        // Convert std::vector to jobjectArray
-        jobjectArray jArgs = env->NewObjectArray(args.size(), env->FindClass("java/lang/Object"), nullptr);
-        for (int i = 0; i < args.size(); ++i) {
-            jobject jargval = createCppRefObject(env, "svfjava/SVFValue", args[i]);
-            env->SetObjectArrayElement(jArgs, i, jargval);
+        // Convert callBasePTS set to a Java long array
+        jlongArray basePTSArray = env->NewLongArray(callBasePTS.size());
+        jlong* basePTSArrayElements = env->GetLongArrayElements(basePTSArray, nullptr);
+        int i = 0;
+        for (long value : callBasePTS) {
+            basePTSArrayElements[i++] = value;
         }
-        jobject jbaseVal = createCppRefObject(env, "svfjava/SVFValue", base);
-        // Call the Java callback method
-        jobject retVal = env->CallObjectMethod(listener, listenerCallback, jbaseVal, jMethodName, jMethodSignature, jArgs);
+        env->ReleaseLongArrayElements(basePTSArray, basePTSArrayElements, 0);
+
+        // Convert argumentsPTS vector of sets to a Java long 2D array
+        jobjectArray argumentsPTSArray = env->NewObjectArray(argumentsPTS.size(), env->FindClass("[J"), nullptr);
+        for (size_t i = 0; i < argumentsPTS.size(); ++i) {
+            std::set<long> argumentSet = argumentsPTS[i];
+            jlongArray argumentArray = env->NewLongArray(argumentSet.size());
+            jlong* argumentArrayElements = env->GetLongArrayElements(argumentArray, nullptr);
+            size_t j = 0;
+            for (long value : argumentSet) {
+                argumentArrayElements[j++] = value;
+            }
+            env->ReleaseLongArrayElements(argumentArray, argumentArrayElements, 0);
+            env->SetObjectArrayElement(argumentsPTSArray, i, argumentArray);
+        }
+
+        // Call the Java method
+        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback, basePTSArray, env->NewStringUTF(methodName), env->NewStringUTF(methodSignature), argumentsPTSArray);
+
+        // Convert the returned long array to a C++ set
+        std::set<long> result;
+        if (resultArray != nullptr) {
+            jsize length = env->GetArrayLength(resultArray);
+            jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
+            for (int i = 0; i < length; ++i) {
+                result.insert(resultElements[i]);
+            }
+            env->ReleaseLongArrayElements(resultArray, resultElements, 0);
+        }
 
         // Release local references
         env->DeleteLocalRef(jMethodName);
         env->DeleteLocalRef(jMethodSignature);
-        env->DeleteLocalRef(jArgs);
-
-        return nullptr;
+        return result;
     };
+
     // dot -Grankdir=LR -Tpdf pag.dot -o pag.pdf
     // dot -Grankdir=LR -Tpdf pag2.dot -o pag2.pdf
     // dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
     // dot -Grankdir=LR -Tpdf svfg2.dot -o svfg2.pdf
     std::vector<jobject> argsV;
-    assert(module);
-    assert(func);
-    assert(pag);
-    assert(vfg);
-    assert(svfg);
-    assert(svfModuleClass);
-    assert(pagField);
-    assert(vfgField);
-    assert(svfgField);
-    return processFunction(module, pag, nullptr, svfg, vfg, func, callback);
 
+    set<long> returnPTS = e->getNativeFunctionPTS(function, basePTSSet, argsPTSsVector);
+    jlongArray returnPTSArray = env->NewLongArray(returnPTS.size());
+    jlong* returnPTSArrayElements = env->GetLongArrayElements(returnPTSArray, nullptr);
+    int i = 0;
+    for (long value : returnPTS) {
+        returnPTSArrayElements[i++] = value;
+    }
+    env->ReleaseLongArrayElements(returnPTSArray, returnPTSArrayElements, 0);
+    return returnPTSArray;
 }
+
 /*
  * Class:     svfjava_SVFJava
  * Method:    runmain
@@ -841,354 +484,42 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
     jmethodID constructor = env->GetMethodID(svfModuleClass, "<init>", "(J)V");
     jobject svfModuleObject = env->NewObject(svfModuleClass, constructor, (jlong) svfModule);
 
+    SVFIRBuilder* builder = new SVFIRBuilder(svfModule);
+    SVFIR *pag = builder->build();
+    Andersen *ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
+    SVFGBuilder* svfBuilder = new SVFGBuilder();
+    SVFG *svfg = svfBuilder->buildFullSVFG(ander);
+    assert(svfg->getPAG());
+    ExtendedSVFG* e = new ExtendedSVFG(svfModule, svfg);
+    env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "svfg", "J"), (long)svfg);
+    env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "extendedSVFG", "J"), (long)e);
+    cout << "svfg: " << (long)svfg << endl;
+    cout << "extended svfg: " << (long)e << endl;
     env->ReleaseStringUTFChars(moduleName, moduleNameStr);
 
     return svfModuleObject;
 }
 
 /*
- * Class:     svfjava_SVFIRBuilder
- * Method:    create
- * Signature: (Lsvfjava/SVFModule;)Lsvfjava/SVFIRBuilder;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFIRBuilder_create(JNIEnv *env, jclass cls, jobject module) {
-    SVFModule *svfModule = (SVFModule *) getCppReferencePointer(env, module);
-    SVFIRBuilder *builder = new SVFIRBuilder(svfModule);
-
-    jclass builderClass = env->FindClass("svfjava/SVFIRBuilder");
-    jmethodID constructor = env->GetMethodID(builderClass, "<init>", "(J)V");
-    jobject builderObject = env->NewObject(builderClass, constructor, (jlong) builder);
-
-    return builderObject;
-}
-
-/*
- * Class:     svfjava_SVFIRBuilder
- * Method:    build
- * Signature: ()Lsvfjava/SVFIR;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFIRBuilder_build(JNIEnv *env, jobject obj) {
-    SVFIRBuilder *builder = (SVFIRBuilder *) getCppReferencePointer(env, obj);
-
-    SVFIR *ir = builder->build();
-
-    jclass irClass = env->FindClass("svfjava/SVFIR");
-    jmethodID constructor = env->GetMethodID(irClass, "<init>", "(J)V");
-    jobject irObject = env->NewObject(irClass, constructor, (jlong) ir);
-
-    return irObject;
-}
-
-/*
- * Class:     svfjava_Andersen
- * Method:    create
- * Signature: (Lsvfjava/SVFIR;)Lsvfjava/Andersen;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_Andersen_create(JNIEnv *env, jclass cls, jobject irObj) {
-    SVFIR *ir = (SVFIR *) getCppReferencePointer(env, irObj);
-
-    Andersen *ander = AndersenWaveDiff::createAndersenWaveDiff(ir);
-
-    jclass anderClass = env->FindClass("svfjava/Andersen");
-    jmethodID constructor = env->GetMethodID(anderClass, "<init>", "(J)V");
-    jobject anderObject = env->NewObject(anderClass, constructor, (jlong) ander);
-
-    return anderObject;
-}
-
-/*
- * Class:     svfjava_Andersen
- * Method:    getPTACallGraph
- * Signature: ()Lsvfjava/PTACallGraph;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_Andersen_getPTACallGraph(JNIEnv *env, jobject obj) {
-    Andersen *ander = (Andersen *) getCppReferencePointer(env, obj);
-
-    PTACallGraph *callgraph = ander->getPTACallGraph();
-
-    jclass callgraphClass = env->FindClass("svfjava/CppReference");
-    jmethodID constructor = env->GetMethodID(callgraphClass, "<init>", "(J)V");
-    jobject callgraphObject = env->NewObject(callgraphClass, constructor, (jlong) callgraph);
-
-    return callgraphObject;
-}
-/*
- * Class:     svfjava_VFG
- * Method:    create
- * Signature: (Lsvfjava/PTACallGraph;)Lsvfjava/VFG;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_VFG_create
-        (JNIEnv *env, jclass cls, jobject cg) {
-    PTACallGraph *callgraph = (PTACallGraph *) getCppReferencePointer(env, cg);
-    VFG *vfg = new VFG(callgraph);
-    jclass vfgClass = env->FindClass("svfjava/VFG");
-    jmethodID constructor = env->GetMethodID(vfgClass, "<init>", "(J)V");
-    jobject o = env->NewObject(vfgClass, constructor, (jlong) vfg);
-    return o;
-}
-/*
- * Class:     svfjava_SVFGBuilder
- * Method:    create
- * Signature: ()Lsvfjava/SVFGBuilder;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFGBuilder_create(JNIEnv *env, jclass cls) {
-
-    SVFGBuilder *b = new SVFGBuilder();
-    jmethodID constructor = env->GetMethodID(cls, "<init>", "(J)V");
-    jobject o = env->NewObject(cls, constructor, (jlong) b);
-
-    return o;
-}
-/*
- * Class:     svfjava_SVFGBuilder
- * Method:    buildFullSVFG
- * Signature: (Lsvfjava/Andersen;)Lsvfjava/SVFG;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFGBuilder_buildFullSVFG(JNIEnv *env, jobject jthis, jobject obj) {
-    SVFGBuilder *builder = (SVFGBuilder *) getCppReferencePointer(env, jthis);
-    Andersen *ander = (Andersen *) getCppReferencePointer(env, obj);
-
-    SVFG *svfg = builder->buildFullSVFG(ander);
-
-    jclass svfgClass = env->FindClass("svfjava/SVFG");
-    jmethodID constructor = env->GetMethodID(svfgClass, "<init>", "(J)V");
-    jobject svfgObject = env->NewObject(svfgClass, constructor, (jlong) svfg);
-
-    return svfgObject;
-}
-/*
- * Class:     svfjava_SVFG
- * Method:    dump
- * Signature: (Ljava/lang/String)V;
- */
-JNIEXPORT void JNICALL Java_svfjava_SVFG_dump(JNIEnv *env, jobject jthis, jstring filename) {
-    SVFG *graph = (SVFG *) getCppReferencePointer(env, jthis);
-
-    const char *argStr = env->GetStringUTFChars(filename, 0);
-    std::string s(argStr);
-    graph->dump(s);
-    env->ReleaseStringUTFChars(filename, argStr);
-    env->DeleteLocalRef(filename);
-}
-/*
  * Class:     svfjava_SVFModule
  * Method:    getFunctions
- * Signature: ()[Lsvfjava/SVFFunction;
+ * Signature: ()[Ljava/lnag/String;
  */
-JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions(JNIEnv *env, jobject obj) {
-    SVFModule *svfModule = (SVFModule *) getCppReferencePointer(env, obj);
+JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions
+        (JNIEnv * env, jobject jThis){
+    SVFModule *svfModule = (SVFModule *) getCppReferencePointer(env, jThis);
 
     std::vector<const SVFFunction *> functions = svfModule->getFunctionSet();
 
-    jclass svfFunctionClass = env->FindClass("svfjava/SVFFunction");
-    jmethodID constructor = env->GetMethodID(svfFunctionClass, "<init>", "(JLjava/lang/String;)V");
+    jclass strClass = env->FindClass("java/lang/String");
 
-    jobjectArray functionArray = env->NewObjectArray(functions.size(), svfFunctionClass, nullptr);
+    jobjectArray functionArray = env->NewObjectArray(functions.size(), strClass, nullptr);
 
     for (size_t i = 0; i < functions.size(); ++i) {
-    jstring jName = env->NewStringUTF(functions[i]->getName().c_str());
-    cout << functions[i]->getName();
-    jobject svfFunctionObject = env->NewObject(svfFunctionClass, constructor, (jlong) functions[i], (jstring) jName);
-    env->DeleteLocalRef(jName);
-    env->SetObjectArrayElement(functionArray, i, svfFunctionObject);
+        jstring jName = env->NewStringUTF(functions[i]->getName().c_str());
+
+        env->SetObjectArrayElement(functionArray, i, jName);
     }
 
     return functionArray;
-}
-/*
- * Class:     svfjava_SVFFunction
- * Method:    getArgumentsNative
- * Signature: ()[Lsvfjava/SVFArgument;
- */
-JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFFunction_getArgumentsNative(JNIEnv *env, jobject obj) {
-    SVFFunction *svfFunction = (SVFFunction *) getCppReferencePointer(env, obj);
-
-    jclass svfArgumentClass = env->FindClass("svfjava/SVFArgument");
-    jmethodID constructor = env->GetMethodID(svfArgumentClass, "<init>", "(J)V");
-
-    jobjectArray argumentArray = env->NewObjectArray(svfFunction->arg_size(), svfArgumentClass, nullptr);
-
-    for (size_t i = 0; i < svfFunction->arg_size(); ++i) {
-        const SVFArgument *arg = svfFunction->getArg(i);
-        jobject svfArgumentObject = env->NewObject(svfArgumentClass, constructor, (jlong) arg);
-
-        env->SetObjectArrayElement(argumentArray, i, svfArgumentObject);
-    }
-
-    return argumentArray;
-}
-/*
- * Class:     svfjava_SVFIR
- * Method:    getArgumentValues
- * Signature: (Lsvfjava/SVFFunction;)[Lsvfjava/SVFValue;
- */
-JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFIR_getArgumentValues
-        (JNIEnv * env, jobject jthis, jobject jfunc){
-
-    SVFIR* pag = (SVFIR *) getCppReferencePointer(env, jthis);
-    SVFFunction *svfFunction = (SVFFunction *) getCppReferencePointer(env, jfunc);
-
-    jclass svfValueClass = env->FindClass("svfjava/SVFValue");
-
-    auto funArgs = pag->getFunArgsList(svfFunction);
-
-    jobjectArray argumentArray = env->NewObjectArray(funArgs.size(), svfValueClass, nullptr);
-    for (int i = 0; i < funArgs.size(); i++) {
-        const auto &arg = funArgs.at(i);
-        cout << "arg " << arg->toString() << " val " << arg->getValue()->toString() << endl;
-        for (const auto &edge: arg->getOutEdges()) {
-            if (auto store = SVFUtil::dyn_cast<StoreStmt>(edge)) {
-                cout << "arg stored: " << edge->getValue()->toString() << endl;
-                cout << "to: " << store->getLHSVar()->toString() << endl;
-                auto val = store->getLHSVar()->getValue();
-                jobject svfArgumentObject = createCppRefObject(env, "svfjava/SVFValue", val);
-                env->SetObjectArrayElement(argumentArray, i, svfArgumentObject);
-                break;
-            }
-        }
-
-    }
-    cout << "done" << endl;
-    return argumentArray;
-}
-
-/*
- * Class:     svfjava_PointsTo
- * Method:    toStringNative
- * Signature: ()Ljava/lang/String;
- */
-JNIEXPORT jstring JNICALL Java_svfjava_PointsTo_toStringNative
-        (JNIEnv *env, jobject jthis) {
-    PointsTo *pt = (PointsTo *) getCppReferencePointer(env, jthis);
-    return nullptr;
-}
-/*
- * Class:     svfjava_VFGNode
- * Method:    toStringNative
- * Signature: ()Ljava/lang/String;
- */
-JNIEXPORT jstring JNICALL Java_svfjava_VFGNode_toStringNative
-        (JNIEnv *env, jobject jthis) {
-    VFGNode* t = (VFGNode *) getCppReferencePointer(env, jthis);
-    jstring str = env->NewStringUTF(t->toString().c_str());
-    return str;
-}
-/*
- * Class:     svfjava_SVFValue
- * Method:    toStringNative
- * Signature: ()Ljava/lang/String;
- */
-JNIEXPORT jstring JNICALL Java_svfjava_SVFValue_toStringNative
-        (JNIEnv *env, jobject jthis) {
-    SVFValue *v = (SVFValue *) getCppReferencePointer(env, jthis);
-    std::string s = v->toString();
-    const char *c = s.c_str();
-    jstring moduleNameStr = env->NewStringUTF(c);
-    return moduleNameStr;
-}
-
-
-/*
- * Class:     svfjava_SVFIR
- * Method:    getGNode
- * Signature: (Lsvfjava/PointsTo;)Lsvfjava/SVFVar;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getGNode
-        (JNIEnv *env, jobject jthis, jobject jpt) {
-    // SVFIR* ir = (SVFIR*)getCppReferencePointer(env, jthis);
-    // PointsTo* pt = (PointsTo*)getCppReferencePointer(env, jpt);
-    // NodeID nodeID = ir->getValueNode(svfval);
-    // PAGNode* node = ir->getGNode(nodeID);
-    // return createCppRefObject(env, "svfjava/SVFVar", node);
-}
-/*
- * Class:     svfjava_SVFIR
- * Method:    getValueNode
- * Signature: (Lsvfjava/SVFValue;)Lsvfjava/NodeID;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFIR_getValueNode
-        (JNIEnv *env, jobject jthis, jobject val) {
-    SVFIR *ir = (SVFIR *) getCppReferencePointer(env, jthis);
-    SVFValue *svfVal = (SVFValue *) getCppReferencePointer(env, val);
-    NodeID nodeId = ir->getValueNode(svfVal);
-
-}
-
-/*
- * Class:     svfjava_Andersen
- * Method:    getPTS
- * Signature: (Lsvfjava/SVFIR;Lsvfjava/SVFValue;)[Lsvfjava/SVFVar;
- */
-JNIEXPORT jobjectArray JNICALL Java_svfjava_Andersen_getPTS(JNIEnv *env, jobject jthis, jobject jir, jobject jval) {
-    Andersen *andersen = (Andersen *) getCppReferencePointer(env, jthis);
-    SVFIR *ir = (SVFIR *) getCppReferencePointer(env, jir);
-    SVFValue *svfVal = (SVFValue *) getCppReferencePointer(env, jval);
-    NodeID nodeId = ir->getValueNode(svfVal);
-    const PointsTo &pts = andersen->getPts(nodeId);
-    std::vector<PAGNode *> pointsToSet;
-    for (PointsTo::iterator ii = pts.begin(), ie = pts.end();
-         ii != ie; ii++) {
-        PAGNode *target = ir->getGNode(*ii);
-        pointsToSet.push_back(target);
-    }
-
-    jclass pointsToClass = env->FindClass("svfjava/SVFVar");
-
-    jobjectArray resultArray = env->NewObjectArray(pointsToSet.size(), pointsToClass, nullptr);
-
-    for (size_t i = 0; i < pointsToSet.size(); ++i) {
-        jobject target = createCppRefObject(env, "svfjava/SVFVar", pointsToSet[i]);
-        env->SetObjectArrayElement(resultArray, i, target);
-        env->DeleteLocalRef(target);
-    }
-
-    // Return the jobjectArray
-    return resultArray;
-}
-
-/*
- * Class:     svfjava_SVFVar
- * Method:    getValue
- * Signature: ()Lsvfjava/SVFValue;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFVar_getValue
-        (JNIEnv *env, jobject jthis) {
-    SVFVar *v = (SVFVar *) getCppReferencePointer(env, jthis);
-    const SVFValue *val = v->getValue();
-    return createCppRefObject(env, "svfjava/SVFValue", val);
-}
-/*
- * Class:     svfjava_SVFG
- * Method:    getFormalParameter
- * Signature: (Lsvfjava/SVFValue;)Lsvfjava/VFGNode;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFG_getFormalParameter
-        (JNIEnv * env, jobject jthis, jobject jval){
-    SVFValue* val = (SVFValue*) getCppReferencePointer(env, jval);
-    SVFG* svfg = (SVFG*) getCppReferencePointer(env, jthis);
-
-    if (VFGNode* node = (VFGNode*)getDefinitionIfFormalParameter(svfg, val)) {
-        jobject jnode = createCppRefObject(env, "svfjava/VFGNode", node);
-        return jnode;
-    }
-    return nullptr;
-
-}
-
-/*
- * Class:     svfjava_SVFG
- * Method:    getFunctionFormalParameter
- * Signature: (Lsvfjava/SVFFunction;I)Lsvfjava/VFGNode;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFG_getFunctionFormalParameter
-        (JNIEnv * env, jobject jthis, jobject jfunc, jint index){
-
-    SVFFunction* func = (SVFFunction*) getCppReferencePointer(env, jfunc);
-    SVFG* svfg = (SVFG*) getCppReferencePointer(env, jthis);
-    SVFIR* pag = svfg->getPAG();
-    if (VFGNode* node = (VFGNode*)svfg->getFormalParmVFGNode(pag->getGNode(pag->getValueNode(func->getArg(index))))) {
-        jobject jnode = createCppRefObject(env, "svfjava/VFGNode", node);
-        return jnode;
-    }
-    return nullptr;
 }
