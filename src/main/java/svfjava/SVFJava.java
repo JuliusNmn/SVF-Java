@@ -53,10 +53,12 @@ public class SVFJava {
 
     public static void main(String[] args) {
         SVFJava.init();
-        String moduleName = "/home/julius/IdeaProjects/opal/DEVELOPING_OPAL/validateCross/src/test/resources/xl_llvm/libnative.ll";
-        if (args.length > 0) {
-            moduleName = args[0];
+        if (args.length != 1) {
+            System.err.println("Usage: SVFJava path_to_module(.bc|.ll)");
+            return;
         }
+        String moduleName = args[0];
+
         SVFModule module = SVFModule.createSVFModule(moduleName, new SVFAnalysisListener() {
             public long[] nativeToJavaCallDetected(long[] basePTS, String methodName, String methodSignature, long[][] argsPTSs) {
                 System.out.println("got pts request for function " + methodName);

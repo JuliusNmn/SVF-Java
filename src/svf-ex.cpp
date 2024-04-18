@@ -217,7 +217,11 @@ private:
 int main(int argc, char **argv) {
 
     std::vector<std::string> moduleNameVec;
-    moduleNameVec.push_back("/home/julius/IdeaProjects/opal/DEVELOPING_OPAL/validateCross/src/test/resources/xl_llvm/libnative.ll");
+    if (argc != 2) {
+        cout << "usage: " << argv[0] << "path_to_module(.bc|.ll)" << endl;
+        return 1;
+    }
+    moduleNameVec.push_back(argv[1]);
     if (Options::WriteAnder() == "ir_annotator") {
         LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
     }
