@@ -50,7 +50,7 @@ using namespace SVF;
 // method return PTS should be added by calling updatePointsToSet(returnValueNode, ...)
 typedef std::function<set<long>(set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS)> ProcessJavaMethodInvocation;
 // this will be used to request an allocsite id for a Native-side JNI allocation
-typedef std::function<long(char* classname, char* context)> GetJNIAllocSiteId;
+typedef std::function<long(const char* classname, const char* context)> GetJNIAllocSiteId;
 // extends SVFG with alloc nodes for jni java instances using an additional graph.
 // defines a graph traversal function that traverses over both graphs starting from a VFGNode x,
 // returns any REAL (not mirrored) JavaAllocSite that the VFGNode may point to.
@@ -60,11 +60,18 @@ typedef std::function<long(char* classname, char* context)> GetJNIAllocSiteId;
 // mirror of f's return value VFGNode is connected to JavaAllocSites
 // if PTS for a jni cal argument changes, invoke java analysis again.
 class ExtendedSVFG {
-public:
+
+private:
+
     ProcessJavaMethodInvocation callback = nullptr;
+    GetJNIAllocSiteId getAllocSiteId = nullptr;
     SVFG* svfg;
     DetectNICalls* detectedJniCalls;
-    ExtendedSVFG(SVFModule* module, SVFG* svfg) : svfg(svfg) {
+    // these PTS are updated when getNativeFunctionPTS is called
+    std::map<const VFGNode*, set<long>*> jniFunctionArgPointsToSets;
+
+public:
+    ExtendedSVFG(SVFModule* module, SVFG* svfg, ProcessJavaMethodInvocation javaCallback, GetJNIAllocSiteId getAllocSiteId) : svfg(svfg),  callback(javaCallback), getAllocSiteId(getAllocSiteId) {
         const llvm::Module* lm = LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule();
         detectedJniCalls = new DetectNICalls();
         for (const auto &svfFunction: *module) {
@@ -75,23 +82,23 @@ public:
         for (const auto &item: detectedJniCalls->detectedJNIInvocations) {
             cout << "JNI invoke site " << item.second->className << " " << item.second->methodName << endl;
         }
+        cout << " detected " << detectedJniCalls->detectedJNIAllocations.size() << " JNI alloc sites" << endl;
+        for (const auto &item: detectedJniCalls->detectedJNIAllocations) {
+            cout << "JNI invoke site " << item.second->className << endl;
+            long id = getAllocSiteId(item.second->className, nullptr);
+
+        }
+
     }
-
-    // these PTS are updated when getNativeFunctionPTS is called
-    std::map<const VFGNode*, set<long>*> jniFunctionArgPointsToSets;
-
-    // stores a mapping from svfg nodes to JavaAllocSite mirror
-    // for now, only method return values are mirrored.
-    std::map<NodeID , long> svfgNodeMirrors;
 
 
     // called from java analysis when PTS for native function call args (+ base) are known
     set<long> getNativeFunctionPTS(const SVFFunction* function, set<long> callBasePTS, vector<set<long>> argumentsPTS) {
-
+        // (env, this, arg0, arg1, ...)
         set<long> returnValuePTS;
         auto args = svfg->getPAG()->getFunArgsList(function);
         auto baseNode = svfg->getFormalParmVFGNode(args[1]);
-        cout << "getting Return PTS for " << function->toString() << endl;
+        assert(args.size() == argumentsPTS.size() + 2 && "native function arg count must == size of arguments PTS + 2 ");
         if (!callBasePTS.empty()) {
             if (auto existingPTS = jniFunctionArgPointsToSets[baseNode]) {
                 existingPTS->insert(callBasePTS.begin(), callBasePTS.end());
@@ -102,7 +109,7 @@ public:
         }
 
         for (int i = 0; i < argumentsPTS.size(); i++) {
-            auto argNode = svfg->getFormalParmVFGNode(args[i + 3]);
+            auto argNode = svfg->getFormalParmVFGNode(args[i + 2]);
             auto argPTS = argumentsPTS[i];
             if (!argPTS.empty()) {
                 if (auto existingPTS = jniFunctionArgPointsToSets[argNode]) {
@@ -121,7 +128,7 @@ public:
         }
         return returnValuePTS;
     }
-
+private:
 
     set<long> getReturnPTSForJNICallsite(const SVFCallInst* call, const JNIInvocation* jniInv) {
         auto pag = svfg->getPAG();
@@ -168,8 +175,9 @@ public:
                 if (const JNIInvocation* jniInv = detectedJniCalls->detectedJNIInvocations[cb]){
                     auto callSitePts = getReturnPTSForJNICallsite(callInst, jniInv);
                     allocations.insert(callSitePts.begin(), callSitePts.end());
+                } else if (const JNIAllocation* jniAlo = detectedJniCalls->detectedJNIAllocations[cb]) {
+                    allocations.insert(jniAlo->id);
                 }
-
             }
 
             if (set<long>* pts = jniFunctionArgPointsToSets[vNode]) {
@@ -246,21 +254,39 @@ int main(int argc, char **argv) {
     svfg->dump("svfg");
 
     cout << endl;
-    ExtendedSVFG* e = new ExtendedSVFG(svfModule, svfg);
-    e->callback = [](set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS) {
+    ProcessJavaMethodInvocation cb1 = [](set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS) {
         //  make function return this
         return callBasePTS;
     };
+    GetJNIAllocSiteId  cb2 = [](const char* className, const char* context) {
+        return 101;
+    };
+    ExtendedSVFG* e = new ExtendedSVFG(svfModule, svfg, cb1, cb2);
+
 
     int id = 0;
     auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn");
-    auto allocSite = 666;
-    set<long> returnValuePTS;
-    returnValuePTS.insert(allocSite);
-    vector<set<long>> argumentsPTS;
-    auto pts = e->getNativeFunctionPTS(func, returnValuePTS, argumentsPTS);
+    set<long> callbasePTS;
+    callbasePTS.insert(666);
+    vector<set<long>> argumentsPTS1;
+    set<long> arg1PTS1;
+    arg1PTS1.insert(909);
+    argumentsPTS1.push_back(arg1PTS1);
+    auto pts = e->getNativeFunctionPTS(func, callbasePTS, argumentsPTS1);
 
     cout << pts.size() << endl;
+
+
+    auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CreateJavaInstanceFromNative_createInstanceAndCallMyFunctionFromNative");
+    set<long> callBasePTS;
+    callBasePTS.insert(50);
+    vector<set<long>> argumentsPTS2;
+    set<long> arg1PTS;
+    arg1PTS.insert(2);
+    argumentsPTS2.push_back(arg1PTS);
+    auto pts2 = e->getNativeFunctionPTS(func, callbasePTS, argumentsPTS2);
+
+    cout << pts2.size() << endl;
 
 
     //pag doesn't change if ander changes
@@ -361,62 +387,8 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
         // Add the PTS to the args PTS vector
         argsPTSsVector.push_back(rowSet);
     }
-    jfieldID listenerField = env->GetFieldID(svfModuleClass, "listener", "Lsvfjava/SVFAnalysisListener;");
-    assert(listenerField);
-    jobject listener = env->GetObjectField(svfModule, listenerField);
-    assert(listener);
+
     // public Set<JavaAllocSite> nativeToJavaCallDetected(Set<JavaAllocSite> base, String methodName, String methodSignature, Set<JavaAllocSite>[] args);
-
-    jmethodID listenerCallback = env->GetMethodID(env->GetObjectClass(listener), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;[[J)[J");
-    assert(listenerCallback);
-    e->callback = [env, listener, listenerCallback](set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS) {
-        cout << "calling java svf listener. detected method call to " << methodName << " signature " << methodSignature << endl;
-        // Convert char* to Java strings
-        jstring jMethodName = env->NewStringUTF(methodName);
-        jstring jMethodSignature = env->NewStringUTF(methodSignature);
-        // Convert callBasePTS set to a Java long array
-        jlongArray basePTSArray = env->NewLongArray(callBasePTS.size());
-        jlong* basePTSArrayElements = env->GetLongArrayElements(basePTSArray, nullptr);
-        int i = 0;
-        for (long value : callBasePTS) {
-            basePTSArrayElements[i++] = value;
-        }
-        env->ReleaseLongArrayElements(basePTSArray, basePTSArrayElements, 0);
-
-        // Convert argumentsPTS vector of sets to a Java long 2D array
-        jobjectArray argumentsPTSArray = env->NewObjectArray(argumentsPTS.size(), env->FindClass("[J"), nullptr);
-        for (size_t i = 0; i < argumentsPTS.size(); ++i) {
-            std::set<long> argumentSet = argumentsPTS[i];
-            jlongArray argumentArray = env->NewLongArray(argumentSet.size());
-            jlong* argumentArrayElements = env->GetLongArrayElements(argumentArray, nullptr);
-            size_t j = 0;
-            for (long value : argumentSet) {
-                argumentArrayElements[j++] = value;
-            }
-            env->ReleaseLongArrayElements(argumentArray, argumentArrayElements, 0);
-            env->SetObjectArrayElement(argumentsPTSArray, i, argumentArray);
-        }
-
-        // Call the Java method
-        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback, basePTSArray, env->NewStringUTF(methodName), env->NewStringUTF(methodSignature), argumentsPTSArray);
-
-        // Convert the returned long array to a C++ set
-        std::set<long> result;
-        if (resultArray != nullptr) {
-            jsize length = env->GetArrayLength(resultArray);
-            jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
-            for (int i = 0; i < length; ++i) {
-                result.insert(resultElements[i]);
-            }
-            env->ReleaseLongArrayElements(resultArray, resultElements, 0);
-        }
-
-        // Release local references
-        env->DeleteLocalRef(jMethodName);
-        env->DeleteLocalRef(jMethodSignature);
-        return result;
-    };
-
     // dot -Grankdir=LR -Tpdf pag.dot -o pag.pdf
     // dot -Grankdir=LR -Tpdf pag2.dot -o pag2.pdf
     // dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
@@ -471,9 +443,9 @@ JNIEXPORT void JNICALL Java_svfjava_SVFJava_runmain
 /*
  * Class:     svfjava_SVFModule
  * Method:    createSVFModule
- * Signature: (Ljava/lang/String;)Lsvfjava/SVFModule;
+ * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener;)Lsvfjava/SVFModule;
  */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName) {
+JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName, jobject listenerArg) {
     const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
     std::vector<std::string> moduleNameVec;
     moduleNameVec.push_back(moduleNameStr);
@@ -490,11 +462,73 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
     SVFGBuilder* svfBuilder = new SVFGBuilder();
     SVFG *svfg = svfBuilder->buildFullSVFG(ander);
     assert(svfg->getPAG());
-    ExtendedSVFG* e = new ExtendedSVFG(svfModule, svfg);
+
+
+    jmethodID listenerCallback1 = env->GetMethodID(env->GetObjectClass(listenerArg), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;[[J)[J");
+    assert(listenerCallback1);
+
+    jmethodID listenerCallback2 = env->GetMethodID(env->GetObjectClass(listenerArg), "jniNewObject", "(Ljava/lang/String;Ljava/lang/String;)J");
+    assert(listenerCallback2);
+    jobject listener = env->NewGlobalRef(listenerArg);
+
+
+    ProcessJavaMethodInvocation cb1 = [env, listener, listenerCallback1](set<long> callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>> argumentsPTS) {
+        cout << "calling java svf listener. detected method call to " << methodName << " signature " << methodSignature << endl;
+        // Convert char* to Java strings
+        jstring jMethodName = env->NewStringUTF(methodName);
+        jstring jMethodSignature = env->NewStringUTF(methodSignature);
+        // Convert callBasePTS set to a Java long array
+        jlongArray basePTSArray = env->NewLongArray(callBasePTS.size());
+        jlong* basePTSArrayElements = env->GetLongArrayElements(basePTSArray, nullptr);
+        int i = 0;
+        for (long value : callBasePTS) {
+            basePTSArrayElements[i++] = value;
+        }
+        env->ReleaseLongArrayElements(basePTSArray, basePTSArrayElements, 0);
+
+        // Convert argumentsPTS vector of sets to a Java long 2D array
+        jobjectArray argumentsPTSArray = env->NewObjectArray(argumentsPTS.size(), env->FindClass("[J"), nullptr);
+        for (size_t i = 0; i < argumentsPTS.size(); ++i) {
+            std::set<long> argumentSet = argumentsPTS[i];
+            jlongArray argumentArray = env->NewLongArray(argumentSet.size());
+            jlong* argumentArrayElements = env->GetLongArrayElements(argumentArray, nullptr);
+            size_t j = 0;
+            for (long value : argumentSet) {
+                argumentArrayElements[j++] = value;
+            }
+            env->ReleaseLongArrayElements(argumentArray, argumentArrayElements, 0);
+            env->SetObjectArrayElement(argumentsPTSArray, i, argumentArray);
+        }
+        // Call the Java method
+        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback1, basePTSArray, env->NewStringUTF(methodName), env->NewStringUTF(methodSignature), argumentsPTSArray);
+        // Convert the returned long array to a C++ set
+        std::set<long> result;
+        if (resultArray != nullptr) {
+            jsize length = env->GetArrayLength(resultArray);
+            jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
+            for (int i = 0; i < length; ++i) {
+                result.insert(resultElements[i]);
+            }
+            env->ReleaseLongArrayElements(resultArray, resultElements, 0);
+        }
+        // Release local references
+        env->DeleteLocalRef(jMethodName);
+        env->DeleteLocalRef(jMethodSignature);
+        return result;
+    };
+    GetJNIAllocSiteId  cb2 = [env, listener, listenerCallback2](const char* className, const char* context) {
+        jstring jClassName = env->NewStringUTF(className);
+        jstring jContext = env->NewStringUTF(context);
+        cout << "getting new instanceid from java for " << className << endl;
+        jlong newInstanceId = env->CallLongMethod(listener, listenerCallback2, jClassName, jContext);
+        env->DeleteLocalRef(jClassName);
+        env->DeleteLocalRef(jContext);
+        return newInstanceId;
+    };
+
+    ExtendedSVFG* e = new ExtendedSVFG(svfModule, svfg, cb1, cb2);
     env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "svfg", "J"), (long)svfg);
     env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "extendedSVFG", "J"), (long)e);
-    cout << "svfg: " << (long)svfg << endl;
-    cout << "extended svfg: " << (long)e << endl;
     env->ReleaseStringUTFChars(moduleName, moduleNameStr);
 
     return svfModuleObject;

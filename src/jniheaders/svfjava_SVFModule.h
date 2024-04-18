@@ -10,10 +10,10 @@ extern "C" {
 /*
  * Class:     svfjava_SVFModule
  * Method:    createSVFModule
- * Signature: (Ljava/lang/String;)Lsvfjava/SVFModule;
+ * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener)Lsvfjava/SVFModule;
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule
-  (JNIEnv *, jclass, jstring);
+  (JNIEnv *, jclass, jstring, jobject);
 
 /*
  * Class:     svfjava_SVFModule

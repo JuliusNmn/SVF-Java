@@ -16,8 +16,8 @@ struct JNIInvocation {
     const char* methodName;
     const char*  methodSignature;
 
-//todo: this may not be known statically
-// class is often obtained with GetClass of base object
+// if classname is not known statically, this will be null
+// call base is first argument.
     const char* className;
     const llvm::CallBase* callSite;
 
@@ -27,9 +27,13 @@ struct JNIInvocation {
 };
 
 struct JNIAllocation {
-    std::string className;
-    std::string constructorSignature;
-    llvm::CallBase* allocSite;
+    const char* className;
+    const llvm::CallBase* allocSite;
+
+    // id is received from java analysis
+    long id;
+    JNIAllocation(const char* className, const llvm::CallBase *allocSite) : className(className),
+                                                                             allocSite(allocSite) {}
 };
 
 class DetectNICalls {
@@ -40,6 +44,7 @@ class DetectNICalls {
 
 
     void handleJniCall(const llvm::Module* module, JNICallOffset offset, const llvm::CallBase* cb);
+    void handleNewObject(const llvm::Module *module, JNICallOffset offset, const llvm::CallBase *cb);
 public:
     void processFunction(const llvm::Function &F);
     std::map<const llvm::CallBase*, JNIInvocation*> detectedJNIInvocations;
