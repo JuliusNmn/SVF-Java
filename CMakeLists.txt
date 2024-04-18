@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.4.3)
 project(SVF-Java)
+# example options:
+# SVF_DIR=/home/julius/SVF
+# LLVM_DIR=/home/julius/SVF/llvm-14.0.0.obj
+# Z3_DIR=/home/julius/SVF/z3.obj
 
-set(SVF_DIR "/home/julius/SVF")
-set(LLVM_DIR "/home/julius/SVF/llvm-14.0.0.obj")
-set(Z3_DIR "/home/julius/SVF/z3.obj")
+message("SVF_DIR=${SVF_DIR}")
+message("LLVM_DIR=${LLVM_DIR}")
+message("Z3_DIR=${Z3_DIR}")
 
 if (DEFINED LLVM_DIR)
         set(ENV{LLVM_DIR} "${LLVM_DIR}")
