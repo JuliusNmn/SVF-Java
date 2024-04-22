@@ -468,7 +468,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
     assert(svfg->getPAG());
 
 
-    jmethodID listenerCallback1 = env->GetMethodID(env->GetObjectClass(listenerArg), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;[[J)[J");
+    jmethodID listenerCallback1 = env->GetMethodID(env->GetObjectClass(listenerArg), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[[J)[J");
     assert(listenerCallback1);
 
     jmethodID listenerCallback2 = env->GetMethodID(env->GetObjectClass(listenerArg), "jniNewObject", "(Ljava/lang/String;Ljava/lang/String;)J");
@@ -503,8 +503,12 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
             env->ReleaseLongArrayElements(argumentArray, argumentArrayElements, 0);
             env->SetObjectArrayElement(argumentsPTSArray, i, argumentArray);
         }
+        jstring jClassName = nullptr;
+        if (className) {
+            jClassName = env->NewStringUTF(className);
+        }
         // Call the Java method
-        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback1, basePTSArray, env->NewStringUTF(methodName), env->NewStringUTF(methodSignature), argumentsPTSArray);
+        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback1, basePTSArray, jClassName, env->NewStringUTF(methodName), env->NewStringUTF(methodSignature), argumentsPTSArray);
         // Convert the returned long array to a C++ set
         std::set<long> result;
         if (resultArray != nullptr) {

@@ -60,7 +60,7 @@ public class SVFJava {
         String moduleName = args[0];
 
         SVFModule module = SVFModule.createSVFModule(moduleName, new SVFAnalysisListener() {
-            public long[] nativeToJavaCallDetected(long[] basePTS, String methodName, String methodSignature, long[][] argsPTSs) {
+            public long[] nativeToJavaCallDetected(long[] basePTS, String className, String methodName, String methodSignature, long[][] argsPTSs) {
                 System.out.println("got pts request for function " + methodName);
                 // dummy implementation
                 // return PTS for call base as return val of function.
@@ -72,7 +72,9 @@ public class SVFJava {
                 return 1919;
             }
         });
-
+        for (String f : module.getFunctions()) {
+            System.out.println(f);
+        }
         long[] resultPTS = module.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn", new long[]{666}, new long[][]{new long[]{9000}});
         System.out.println("got pts! " + resultPTS.length);
     }

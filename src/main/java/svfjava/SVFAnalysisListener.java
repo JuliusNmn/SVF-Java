@@ -4,7 +4,7 @@ import java.util.HashSet;
 public interface SVFAnalysisListener {
     // argument arrays are guaranteed to be "sets" (unique)
     // return value should be unique
-    public long[] nativeToJavaCallDetected(long[] basePTS, String methodName, String methodSignature, long[][] argsPTSs);
+    public long[] nativeToJavaCallDetected(long[] basePTS, String className, String methodName, String methodSignature, long[][] argsPTSs);
 
     // called when NewObject was detected.
     // context is always null, may be used in future version
