@@ -386,7 +386,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
     assert(svfgField);
     SVFG *svfg = static_cast<SVFG *>((void*)env->GetLongField(svfModule, svfgField));
     assert(svfg);
-    jfieldID ExtendedPAGField = env->GetFieldID(svfModuleClass, "ExtendedPAG", "J");
+    jfieldID ExtendedPAGField = env->GetFieldID(svfModuleClass, "extendedPAG", "J");
     assert(ExtendedPAGField);
     ExtendedPAG* e = static_cast<ExtendedPAG *>((void*)env->GetLongField(svfModule, ExtendedPAGField));
     assert(e);
@@ -556,7 +556,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
 
     ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2);
     env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "svfg", "J"), (long)svfg);
-    env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "ExtendedPAG", "J"), (long)e);
+    env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "extendedPAG", "J"), (long)e);
     env->ReleaseStringUTFChars(moduleName, moduleNameStr);
 
     return svfModuleObject;
