@@ -23,7 +23,9 @@ include_directories(${JNI_INCLUDE_DIRS})
 # uncomment to generate native executable. 
 add_executable(svf-ex ${SOURCES}
         detectJNICalls.cpp
-        detectJNICalls.h)
+        detectJNICalls.h
+        CustomAndersen.cpp
+        CustomAndersen.h)
 target_compile_options(svf-ex PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-g>
     )

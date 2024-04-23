@@ -11,14 +11,14 @@ JNIEnv *env, jobject obj, jobject x) {
     (*env)->CallVoidMethod(env, obj, methodID, x);
 }
 
-JNIEXPORT void JNICALL Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CreateJavaInstanceFromNative_createInstanceAndCallMyFunctionFromNative(
+JNIEXPORT jobject JNICALL Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CreateJavaInstanceFromNative_createInstanceAndCallMyFunctionFromNative(
 JNIEnv *env, jclass clsArg, jobject x) {
     jclass cls = (*env)->FindClass(env, "Lorg/opalj/fpcf/fixtures/xl/llvm/controlflow/bidirectional/CreateJavaInstanceFromNative;");
     jmethodID constructor = (*env)->GetMethodID(env, cls, "<init>", "()V");
     jobject instance = (*env)->NewObject(env, cls, constructor);
-    jmethodID methodID = (*env)->GetMethodID(env, cls, "myJavaFunction", "(Ljava/lang/Object;)V");
+    jmethodID methodID = (*env)->GetMethodID(env, cls, "myJavaFunction", "(Ljava/lang/Object;)Ljava/lang/Object;");
 
-    (*env)->CallVoidMethod(env, instance, methodID, x);
+    return (*env)->CallObjectMethod(env, instance, methodID, x);
 }
 
 JNIEXPORT jobject JNICALL Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn(
