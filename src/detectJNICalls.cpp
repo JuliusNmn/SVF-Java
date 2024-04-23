@@ -7,14 +7,6 @@ using namespace llvm;
 
 
 const char* getStringParameterInitializer(Value* arg) {
-
-    GetElementPtrInst* loadStr = dyn_cast<GetElementPtrInst>(arg);
-    if (loadStr == nullptr) {
-        errs() << "GEP null\n type " << *(arg->getType()) << "\n";
-        //return nullptr;
-    }
-
-    //auto strVal = loadStr->getOperand(0);
     if (auto strConst = llvm::dyn_cast<llvm::ConstantExpr>(arg)) {
         errs() << *strConst << "\n";
         auto strGlobal = llvm::dyn_cast<llvm::GlobalVariable>(strConst->getOperand(0));
@@ -32,6 +24,15 @@ const char* getStringParameterInitializer(Value* arg) {
         StringRef s = str->getAsCString();
         return s.data();
     }
+    if (auto strGlobal = llvm::dyn_cast<GlobalVariable>(arg)) {
+        auto initializer = strGlobal->getInitializer();
+        ConstantDataSequential *str = llvm::dyn_cast<ConstantDataSequential>(initializer);
+        StringRef s = str->getAsCString();
+        return s.data();
+    }
+    return nullptr;
+
+
 }
 
 

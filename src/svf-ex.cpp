@@ -236,7 +236,10 @@ int main(int argc, char **argv) {
         LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
     }
 
-    SVFModule *svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
+    std::cout << SVF_INSTALL_EXTAPI_FILE << std::endl;
+    ExtAPI::getExtAPI()->setExtBcPath(SVF_INSTALL_EXTAPI_FILE);
+
+    SVFModule *svfModule = LLVMModuleSet::buildSVFModule(moduleNameVec);
 
     auto lm = LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule();
 
@@ -473,7 +476,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
     const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
     std::vector<std::string> moduleNameVec;
     moduleNameVec.push_back(moduleNameStr);
-
+    ExtAPI::getExtAPI()->setExtBcPath(SVF_INSTALL_EXTAPI_FILE);
     SVFModule *svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
 
     jclass svfModuleClass = env->FindClass("svfjava/SVFModule");
