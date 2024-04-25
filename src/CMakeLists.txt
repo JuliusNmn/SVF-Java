@@ -34,6 +34,8 @@ target_link_libraries(svf-ex ${SVF_LIB} ${llvm_libs})
 target_link_libraries(svf-ex ${Z3_LIBRARIES})
 target_link_libraries(svf-lib ${SVF_LIB} ${llvm_libs})
 target_link_libraries(svf-lib ${Z3_LIBRARIES})
+message (STATUS "Setting SVF_INSTALL_EXTAPI_FILE=${SVF_INSTALL_EXTAPI_FILE}")
 target_compile_definitions(svf-ex PUBLIC SVF_INSTALL_EXTAPI_FILE=\"${SVF_INSTALL_EXTAPI_FILE}\")
+target_compile_definitions(svf-lib PUBLIC SVF_INSTALL_EXTAPI_FILE=\"${SVF_INSTALL_EXTAPI_FILE}\")
 set_target_properties( svf-ex PROPERTIES
                        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
