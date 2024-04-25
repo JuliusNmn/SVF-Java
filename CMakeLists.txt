@@ -169,3 +169,11 @@ add_custom_target(jar
 )
 
 add_dependencies(jar svf-lib)
+
+add_custom_target(jarmvn
+        COMMAND "mvn" "install:install-file" "-Dfile=${CMAKE_BINARY_DIR}/target/svfjava.jar" "-DgroupId=tud" "-DartifactId=svf_xl" "-Dversion=1.0.0-SNAPSHOT" "-Dpackaging=jar" "-DgeneratePom=true"
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        COMMENT "Running Maven Install"
+        VERBATIM
+)
+add_dependencies(jarmvn jar)
