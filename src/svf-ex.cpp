@@ -175,7 +175,10 @@ public:
 
 
     // called from java analysis when PTS for native function call args (+ base) are known
+    // gets PTS for return value, requests PTS from java analysis on demand
+    // also reports argument points to sets for all jni callsites in this function
     set<long>* getNativeFunctionPTS(const SVFFunction* function, set<long> callBasePTS, vector<set<long>> argumentsPTS) {
+        const llvm::Value* f_llvm = LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(function);
         // (env, this, arg0, arg1, ...)
         auto args = pag->getFunArgsList(function);
         auto baseNode = pag->getValueNode(args[1]->getValue());
@@ -191,6 +194,13 @@ public:
 
         NodeID retNode = pag->getReturnNode(function);
         set<long>* javaPTS = getPTS(retNode);
+
+        // in effect, this reports callsite arguments of all jni callsites in this function to the java analysis
+        for (const auto &item: detectedJniCalls->detectedJNIInvocations) {
+            if (item.first->getFunction() == f_llvm) {
+                getReturnPTSForJNICallsite(item.second);
+            }
+        }
 
         return javaPTS;
     }
