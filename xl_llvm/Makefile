@@ -7,12 +7,12 @@ LDFLAGS += -shared
 OBJS = $(patsubst %.c,%.o,$(wildcard *.c))
 
 %.o: %.c
-	clang-16 -c $< $(CFLAGS) -o $@
+	clang-14 -c $< $(CFLAGS) -o $@
 
 libnative.so: $(OBJS)
-	clang-16 -o $@ $(LDFLAGS) $(OBJS)
-	llvm-objcopy-16 --dump-section .llvmbc=- libnative.so > libnative.bc
-	cat libnative.bc | llvm-dis-16 > libnative.ll
+	clang-14 -o $@ $(LDFLAGS) $(OBJS)
+	llvm-objcopy-14 --dump-section .llvmbc=- libnative.so > libnative.bc
+	cat libnative.bc | llvm-dis-14 > libnative.ll
 
 clean:
 	rm -f libnative.so libnative.bc libnative.ll $(OBJS)
