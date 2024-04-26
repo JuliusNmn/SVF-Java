@@ -6,7 +6,7 @@ sudo apt-get install zlib1g-dev unzip cmake gcc g++ libtinfo5 nodejs
 
 ## 1. Install SVF and its dependency (LLVM pre-built binary) via npm
 ```
-npm i --silent svf-lib --prefix ${HOME}
+npm install svf-lib@1.0.1838 --prefix ~/prefix
 ```
 
 ## 2. configure & build project 
@@ -14,7 +14,7 @@ cmake the project (`cmake -DCMAKE_BUILD_TYPE=Debug .` for debug build)
 ```
 mkdir build
 cd build
-cmake .. -DSVF_DIR="${HOME}/SVF" -DLLVM_DIR="${HOME}/SVF/llvm-14.0.0.obj" -DZ3_DIR="${HOME}/SVF/z3.obj"
+cmake .. -DSVF_DIR="~/prefix/SVF" -DLLVM_DIR="~/prefix/SVF/llvm-14.0.0.obj" -DZ3_DIR="~/prefix/SVF/z3.obj"
 ```
 
 to build the native target, run `make`.
