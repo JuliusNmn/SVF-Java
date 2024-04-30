@@ -148,6 +148,46 @@ void DetectNICalls::handleJniCall(const Module* module, JNICallOffset offset, co
     JNIInvocation* invoke = new JNIInvocation(methodName, methodSig, className, cb);
     detectedJNIInvocations[cb] = invoke;
 }
+
+void DetectNICalls::handleGetOrSetField(const llvm::Module *module, JNICallOffset offset, const llvm::CallBase *cb) {
+    JNINativeInterface_ j{};
+    const JNICallOffset offset_GetFieldID = (unsigned long) (&j.GetFieldID) - (unsigned long) (&j);
+    Value* obj = cb->getOperand(1);
+    Value* fieldIDLoad = dyn_cast<LoadInst>(cb->getOperand(2));
+    if (!fieldIDLoad) return;
+
+    AllocaInst* fieldIDAddr = dyn_cast<AllocaInst>(getPointerOperand(fieldIDLoad)) ;
+    if (!fieldIDAddr) return;
+    CallBase* getFieldIDCall = getDefiningCallsite(fieldIDAddr);
+    JNICallOffset getFieldIDOffset;
+    if (!isJNIEnvOffsetCall(module, getFieldIDCall, getFieldIDOffset)) return;
+    if (getFieldIDOffset != offset_GetFieldID) {
+        errs() << "very weird behavior. unexpected MethodID parameter for GetField\n";
+        return;
+    }
+
+    Value* classOperand = getFieldIDCall->getArgOperand(1);
+    Value* methodNameOperand = getFieldIDCall->getArgOperand(2);
+    Value* methodSigOperand = getFieldIDCall->getArgOperand(3);
+    const char* fieldName = getStringParameterInitializer(methodNameOperand);
+    const char* fieldSig = getStringParameterInitializer(methodSigOperand);
+    if (!fieldName){
+        errs() << "method name " << fieldName << "\n";
+        return;
+    }
+    const char* className = getClassName(module, classOperand);
+    if (!className){
+        errs() << "found invoke with unknown className\n";
+    }
+
+    if (offset == (unsigned long) (&j.SetObjectField) - (unsigned long) (&j)) {
+        detectedJNIFieldSets[cb] = new JNISetField(fieldName, className, cb);
+    } else {
+        detectedJNIFieldGets[cb] = new JNIGetField(fieldName, className, cb);
+    }
+
+}
+
 void DetectNICalls::handleNewObject(const Module* module, JNICallOffset offset, const CallBase* cb)  {
     Value* classOperand = cb->getArgOperand(1);
     const char* className = getClassName(module, classOperand);
@@ -161,6 +201,8 @@ void DetectNICalls::processFunction(const llvm::Function &F) {
 
     const JNICallOffset offset_CallVoidMethod = (unsigned long) (&j.CallVoidMethod) - (unsigned long) (&j);
     const JNICallOffset offset_CallObjectMethod = (unsigned long) (&j.CallObjectMethod) - (unsigned long) (&j);
+    const JNICallOffset offset_GetObjectField = (unsigned long) (&j.GetObjectField) - (unsigned long) (&j);
+    const JNICallOffset offset_SetObjectField = (unsigned long) (&j.SetObjectField) - (unsigned long) (&j);
     const JNICallOffset offset_NewObject = (unsigned long) (&j.NewObject) - (unsigned long) (&j);
     const Module* module = F.getParent();
     for (const BasicBlock &B : F) {
@@ -176,6 +218,8 @@ void DetectNICalls::processFunction(const llvm::Function &F) {
 
                     } else if (offset == offset_NewObject) {
                         handleNewObject(module, offset, cb);
+                    } else if (offset == offset_GetObjectField || offset == offset_SetObjectField) {
+                        handleGetOrSetField(module, offset, cb);
                     }
                 }
             }

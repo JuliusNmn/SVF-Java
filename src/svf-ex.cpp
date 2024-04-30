@@ -45,12 +45,17 @@ using namespace llvm;
 using namespace std;
 using namespace SVF;
 
+// processMethod transitively!!
 
 // this callback is called for all JNI method invocations.
 // call base and argument PTS are passed
-typedef std::function<set<long>*(set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS)> ProcessJavaMethodInvocation;
+typedef std::function<set<long>*(set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS)> CB_SetArgGetReturnPTS;
 // this will be used to request an allocsite id for a Native-side JNI allocation
-typedef std::function<long(const char* classname, const char* context)> GetJNIAllocSiteId;
+typedef std::function<long(const char* classname, const char* context)> CB_GenerateNativeAllocSiteId;
+// called at GetObjectField etc. invoke site
+typedef std::function<set<long>*(set<long>* callBasePTS, const char * className, const char * fieldName)> CB_GetFieldPTS;
+// called at SetObjectField etc, invoke site
+typedef std::function<void(set<long>* callBasePTS, const char * className, const char * fieldName, set<long>* argPTS)> CB_SetFieldPTS;
 
 // this class extends the PAG with special dummy alloc nodes
 // dummy nodes can be added to the initial points to sets of other nodes (such as native function arguments & return values)
@@ -67,17 +72,19 @@ typedef std::function<long(const char* classname, const char* context)> GetJNIAl
 class ExtendedPAG {
 
 private:
-
-    ProcessJavaMethodInvocation callback = nullptr;
-    GetJNIAllocSiteId getAllocSiteId = nullptr;
+    CB_SetArgGetReturnPTS callback_ReportArgPTSGetReturnPTS;
+    CB_GenerateNativeAllocSiteId callback_GenerateNativeAllocSiteId;
+    CB_GetFieldPTS callback_GetFieldPTS;
+    CB_SetFieldPTS callback_SetFieldPTS;
     SVFIR* pag;
     DetectNICalls* detectedJniCalls;
-    // these PTS are updated when getNativeFunctionPTS is called
+    // these PTS are updated when processNativeFunction is called
     //std::map<const VFGNode*, set<long>*> jniFunctionArgPointsToSets;
     map<NodeID, set<NodeID>*> additionalPTS;
     // for each detected JNI interaction callsite, a dummy node is created
     // if a requested pts contains one of these nodes,
     map<NodeID, JNIInvocation*> jniCallsiteDummyNodes;
+    map<NodeID, JNIGetField*> jniGetFieldDummyNodes;
     bool refreshAndersen = true;
 
 
@@ -126,19 +133,32 @@ private:
         set<long>* javaAllocPTS = new set<long>();
         for (const NodeID allocNode: pts) {
             if (JNIInvocation* jniCallsite = jniCallsiteDummyNodes[allocNode]) {
-                // PTS includes return value of JNI function. request it
+                // PTS includes return value of Java function. request it
                 set<long>* jniCallsitePTS = getReturnPTSForJNICallsite(jniCallsite);
                 javaAllocPTS->insert(jniCallsitePTS->begin(), jniCallsitePTS->end());
                 delete jniCallsitePTS;
             } else if (long javaAllocNode = pagDummyNodeToJavaAllocNode[allocNode]){
                 javaAllocPTS->insert(javaAllocNode);
+            } else if (JNIGetField* jniGetField = jniGetFieldDummyNodes[allocNode]) {
+                // PTS includes return value of GetField. request it
+                set<long>* fieldPTS = getPTSForField(jniGetField);
+                javaAllocPTS->insert(fieldPTS->begin(), fieldPTS->end());
+                delete fieldPTS;
             }
         }
         return javaAllocPTS;
     }
 
 public:
-    ExtendedPAG(SVFModule* module, SVFIR* pag, ProcessJavaMethodInvocation javaCallback, GetJNIAllocSiteId getAllocSiteId) : pag(pag),  callback(javaCallback), getAllocSiteId(getAllocSiteId) {
+    ExtendedPAG(SVFModule* module, SVFIR* pag,
+                CB_SetArgGetReturnPTS callback_SetArgGetReturnPTS,
+                CB_GenerateNativeAllocSiteId callback_GenerateNativeAllocSiteId,
+                CB_GetFieldPTS callback_GetFieldPTS,
+                CB_SetFieldPTS callback_SetFieldPTS) : pag(pag),
+                                                       callback_ReportArgPTSGetReturnPTS(callback_SetArgGetReturnPTS),
+                                                       callback_GenerateNativeAllocSiteId(callback_GenerateNativeAllocSiteId),
+                                                       callback_GetFieldPTS(callback_GetFieldPTS),
+                                                       callback_SetFieldPTS(callback_SetFieldPTS) {
         const llvm::Module* lm = LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule();
         detectedJniCalls = new DetectNICalls();
 
@@ -163,7 +183,7 @@ public:
             cout << "JNI alloc site " << item.second->className << endl;
             auto inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(item.first);
             NodeID callsiteNode = pag->getValueNode(inst);
-            long id = getAllocSiteId(item.second->className, nullptr);
+            long id = callback_GenerateNativeAllocSiteId(item.second->className, nullptr);
             NodeID allocSiteDummyNode = createOrAddDummyNode(id);
             set<NodeID>* s = new set<NodeID>();
             s->insert(allocSiteDummyNode);
@@ -171,14 +191,27 @@ public:
             pagDummyNodeToJavaAllocNode[callsiteNode] = id;
         }
 
+        cout << "detected " << detectedJniCalls->detectedJNIFieldGets.size() << " JNI GetFields" << endl;
+        for (const auto &item: detectedJniCalls->detectedJNIFieldGets) {
+            cout << "JNI GetField  site " << item.second->className << " " << item.second->fieldName << endl;
+            auto inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(item.first);
+            NodeID callsiteNode = pag->getValueNode(inst);
+            NodeID dummyNode = pag->addDummyObjNode(inst->getFunction()->getReturnType());
+            jniGetFieldDummyNodes[dummyNode] = item.second;
+            set<NodeID>* s = new set<NodeID>();
+            s->insert(dummyNode);
+            additionalPTS[callsiteNode] = s;
+        }
+
+        cout << "detected " << detectedJniCalls->detectedJNIFieldSets.size() << " JNI SetFields" << endl;
+
     }
 
-
+    // main entry point for native analysis.
     // called from java analysis when PTS for native function call args (+ base) are known
     // gets PTS for return value, requests PTS from java analysis on demand
-    // also reports argument points to sets for all jni callsites in this function
-    set<long>* getNativeFunctionPTS(const SVFFunction* function, set<long> callBasePTS, vector<set<long>> argumentsPTS) {
-        const llvm::Value* f_llvm = LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(function);
+    // also reports argument points to sets for all transitively called jni callsites (CallMethod + SetField)
+    set<long>* processNativeFunction(const SVFFunction* function, set<long> callBasePTS, vector<set<long>> argumentsPTS) {
         // (env, this, arg0, arg1, ...)
         auto args = pag->getFunArgsList(function);
         auto baseNode = pag->getValueNode(args[1]->getValue());
@@ -195,14 +228,40 @@ public:
         NodeID retNode = pag->getReturnNode(function);
         set<long>* javaPTS = getPTS(retNode);
 
-        // in effect, this reports callsite arguments of all jni callsites in this function to the java analysis
+        set<const SVFFunction*> processed;
+        reportArgAndFieldWritePTS(function, &processed);
+
+        return javaPTS;
+    }
+
+    // this reports callsite arguments of all jni callsites and field sets to the java analysis
+    // transitively (for the passed function plus any called functions)!
+    void reportArgAndFieldWritePTS(const SVFFunction* function, set<const SVFFunction*>* processed) {
+        const llvm::Value* f_llvm = LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(function);
+
         for (const auto &item: detectedJniCalls->detectedJNIInvocations) {
             if (item.first->getFunction() == f_llvm) {
                 getReturnPTSForJNICallsite(item.second);
             }
         }
-
-        return javaPTS;
+        for (const auto &item: detectedJniCalls->detectedJNIFieldSets) {
+            if (item.first->getFunction() == f_llvm) {
+                reportSetField(item.second);
+            }
+        }
+        // transitively
+        PTACallGraph* callgraph = customAndersen->getPTACallGraph();
+        PTACallGraphNode* functionNode = callgraph->getCallGraphNode(function);
+        for (const auto &callee: functionNode->getOutEdges()) {
+            for (const auto &callNode: callee->getIndirectCalls()) {
+                if (const SVFCallInst* cs = SVFUtil::dyn_cast<SVFCallInst>(callNode->getCallSite())) {
+                    auto calledFunction = cs->getCalledFunction();
+                    if (processed->insert(calledFunction).second) {
+                        reportArgAndFieldWritePTS(calledFunction, processed);
+                    }
+                }
+            }
+        }
     }
 private:
 
@@ -226,7 +285,38 @@ private:
             argumentsPTS.push_back(argPTS);
         }
         cout << "requesting return PTS for function " << jniInv->methodName << endl;
-        return callback(basePTS, jniInv->className, jniInv->methodName, jniInv->methodSignature, argumentsPTS);
+        return callback_ReportArgPTSGetReturnPTS(basePTS, jniInv->className, jniInv->methodName, jniInv->methodSignature, argumentsPTS);
+
+    }
+    set<long>* getPTSForField(const JNIGetField* getField) {
+        SVFInstruction* inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(getField->callSite);
+        const SVFCallInst* call = dyn_cast<SVFCallInst>(inst);
+        // this is a jni call. now get base + args PTS and perform callback.
+        auto base = call->getArgOperand(1);
+
+        auto baseNode = pag->getValueNode(base);
+
+        set<long>* basePTS = getPTS(baseNode);
+
+
+        cout << "requesting return PTS for field " << getField->fieldName << endl;
+        return callback_GetFieldPTS(basePTS, getField->className, getField->fieldName);
+
+    }
+    void reportSetField(const JNISetField* setField) {
+        SVFInstruction* inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(setField->callSite);
+        const SVFCallInst* call = dyn_cast<SVFCallInst>(inst);
+        // this is a jni call. now get base + args PTS and perform callback.
+        auto base = call->getArgOperand(1);
+        auto baseNode = pag->getValueNode(base);
+        set<long>* basePTS = getPTS(baseNode);
+
+        auto arg = call->getArgOperand(3);
+        auto argNode = pag->getValueNode(arg);
+        set<long>* argPTS = getPTS(argNode);
+
+        cout << "reporting SetField for " << setField->fieldName << endl;
+        callback_SetFieldPTS(basePTS, setField->className, setField->fieldName, argPTS);
 
     }
 
@@ -245,9 +335,9 @@ int main(int argc, char **argv) {
     if (Options::WriteAnder() == "ir_annotator") {
         LLVMModuleSet::getLLVMModuleSet()->preProcessBCs(moduleNameVec);
     }
-
-    std::cout << SVF_INSTALL_EXTAPI_FILE << std::endl;
-    ExtAPI::getExtAPI()->setExtBcPath(SVF_INSTALL_EXTAPI_FILE);
+    std::cout << "EXTAPI path: " << SVF_INSTALL_EXTAPI_FILE << std::endl;
+    if (strlen(SVF_INSTALL_EXTAPI_FILE))
+        ExtAPI::getExtAPI()->setExtBcPath(SVF_INSTALL_EXTAPI_FILE);
 
     SVFModule *svfModule = LLVMModuleSet::buildSVFModule(moduleNameVec);
 
@@ -294,14 +384,22 @@ int main(int argc, char **argv) {
     // SVFG *svfg = svfBuilder.buildFullSVFG(ander);
     // svfg->dump("svfg");
     // cout << endl;
-    ProcessJavaMethodInvocation cb1 = [](set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS) {
+    CB_SetArgGetReturnPTS cb1 = [](set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS) {
         //  make function return this
+        cout << "function called " << methodName << endl;
         return callBasePTS;
     };
-    GetJNIAllocSiteId  cb2 = [](const char* className, const char* context) {
+    CB_GenerateNativeAllocSiteId  cb2 = [](const char* className, const char* context) {
         return 101;
     };
-    ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2);
+    CB_GetFieldPTS cb3 = [](set<long>* callBasePTS, const char * className, const char * fieldName) {
+        cout << "GetField " << fieldName << endl;
+        return callBasePTS;
+    };
+    CB_SetFieldPTS cb4 = [] (set<long>* callBasePTS, const char * className, const char * fieldName, set<long>* argPTS) {
+        cout << "SetField " << argPTS << endl;
+    };
+    ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2, cb3, cb4);
 
 
     int id = 0;
@@ -312,19 +410,21 @@ int main(int argc, char **argv) {
     set<long> arg1PTS1;
     arg1PTS1.insert(909);
     argumentsPTS1.push_back(arg1PTS1);
-    auto pts = e->getNativeFunctionPTS(func, callbasePTS, argumentsPTS1);
+    auto pts = e->processNativeFunction(func, callbasePTS, argumentsPTS1);
 
     cout << pts->size() << endl;
 
 
-    auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CreateJavaInstanceFromNative_createInstanceAndCallMyFunctionFromNative");
+    //auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CreateJavaInstanceFromNative_createInstanceAndCallMyFunctionFromNative");
+    //auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_WriteJavaFieldFromNative_setMyfield");
+    auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_ReadJavaFieldFromNative_getMyfield");
     set<long> callBasePTS;
     callBasePTS.insert(50);
     vector<set<long>> argumentsPTS2;
     set<long> arg1PTS;
     arg1PTS.insert(2);
     argumentsPTS2.push_back(arg1PTS);
-    auto pts2 = e->getNativeFunctionPTS(func2, callbasePTS, argumentsPTS2);
+    auto pts2 = e->processNativeFunction(func2, callbasePTS, argumentsPTS2);
 
     cout << pts2->size() << endl;
 
@@ -431,7 +531,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
     // dot -Grankdir=LR -Tpdf svfg2.dot -o svfg2.pdf
     std::vector<jobject> argsV;
 
-    set<long>* returnPTS = e->getNativeFunctionPTS(function, basePTSSet, argsPTSsVector);
+    set<long>* returnPTS = e->processNativeFunction(function, basePTSSet, argsPTSsVector);
     jlongArray returnPTSArray = env->NewLongArray(returnPTS->size());
     jlong* returnPTSArrayElements = env->GetLongArrayElements(returnPTSArray, nullptr);
     int i = 0;
@@ -483,6 +583,8 @@ JNIEXPORT void JNICALL Java_svfjava_SVFJava_runmain
  * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener;)Lsvfjava/SVFModule;
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName, jobject listenerArg) {
+    cout << "SVF-Java built at " << __DATE__ << " " << __TIME__ << endl;
+    cout << "LLVM Version: " << LLVM_VERSION_STRING << endl;
     const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
     std::vector<std::string> moduleNameVec;
     moduleNameVec.push_back(moduleNameStr);
@@ -503,13 +605,17 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
 
     jmethodID listenerCallback1 = env->GetMethodID(env->GetObjectClass(listenerArg), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[[J)[J");
     assert(listenerCallback1);
-
     jmethodID listenerCallback2 = env->GetMethodID(env->GetObjectClass(listenerArg), "jniNewObject", "(Ljava/lang/String;Ljava/lang/String;)J");
     assert(listenerCallback2);
+    jmethodID listenerCallback3 = env->GetMethodID(env->GetObjectClass(listenerArg), "getField", "([JLjava/lang/String;Ljava/lang/String;)[J");
+    assert(listenerCallback3);
+    jmethodID listenerCallback4 = env->GetMethodID(env->GetObjectClass(listenerArg), "setField", "([JLjava/lang/String;Ljava/lang/String;[J)V");
+    assert(listenerCallback4);
+
     jobject listener = env->NewGlobalRef(listenerArg);
 
 
-    ProcessJavaMethodInvocation cb1 = [env, listener, listenerCallback1](set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS) {
+    CB_SetArgGetReturnPTS cb1 = [env, listener, listenerCallback1](set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS) {
         cout << "calling java svf listener. detected method call to " << methodName << " signature " << methodSignature << endl;
         // Convert char* to Java strings
         jstring jMethodName = env->NewStringUTF(methodName);
@@ -557,7 +663,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
         env->DeleteLocalRef(jMethodSignature);
         return result;
     };
-    GetJNIAllocSiteId  cb2 = [env, listener, listenerCallback2](const char* className, const char* context) {
+    CB_GenerateNativeAllocSiteId  cb2 = [env, listener, listenerCallback2](const char* className, const char* context) {
         jstring jClassName = env->NewStringUTF(className);
         jstring jContext = env->NewStringUTF(context);
         cout << "getting new instanceid from java for " << className << endl;
@@ -566,8 +672,84 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
         env->DeleteLocalRef(jContext);
         return newInstanceId;
     };
+    CB_GetFieldPTS cb3 = [env, listener, listenerCallback3](set<long>* basePTS, const char * className, const char * fieldName) {
+        cout << "GetField " << fieldName << endl;
+        // Convert char* to Java strings
+        jstring jClassName = nullptr;
+        if (className) {
+            jClassName = env->NewStringUTF(className);
+        }
+        jstring jFieldName = env->NewStringUTF(fieldName);
+        // Convert callBasePTS set to a Java long array
+        jlongArray basePTSArray = env->NewLongArray(basePTS->size());
+        jlong* basePTSArrayElements = env->GetLongArrayElements(basePTSArray, nullptr);
+        int i = 0;
+        for (long value : *basePTS) {
+            basePTSArrayElements[i++] = value;
+        }
+        env->ReleaseLongArrayElements(basePTSArray, basePTSArrayElements, 0);
 
-    ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2);
+        // Call the Java method
+        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback3, basePTSArray, jClassName, jFieldName);
+        // Convert the returned long array to a C++ set
+        std::set<long>* result = new std::set<long>();
+        if (resultArray != nullptr) {
+            jsize length = env->GetArrayLength(resultArray);
+            jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
+            for (int i = 0; i < length; ++i) {
+                result->insert(resultElements[i]);
+            }
+            env->ReleaseLongArrayElements(resultArray, resultElements, 0);
+        }
+        // Release local references
+        env->DeleteLocalRef(jClassName);
+        env->DeleteLocalRef(jFieldName);
+        return result;
+    };
+    CB_SetFieldPTS cb4 = [env, listener, listenerCallback4] (set<long>* basePTS, const char * className, const char * fieldName, set<long>* argPTS) {
+        cout << "SetField " << fieldName << endl;
+        // Convert char* to Java strings
+        jstring jClassName = nullptr;
+        if (className) {
+            jClassName = env->NewStringUTF(className);
+        }
+        jstring jFieldName = env->NewStringUTF(fieldName);
+        // Convert callBasePTS set to a Java long array
+        jlongArray basePTSArray = env->NewLongArray(basePTS->size());
+        jlong* basePTSArrayElements = env->GetLongArrayElements(basePTSArray, nullptr);
+        int i = 0;
+        for (long value : *basePTS) {
+            basePTSArrayElements[i++] = value;
+        }
+        env->ReleaseLongArrayElements(basePTSArray, basePTSArrayElements, 0);
+
+        jlongArray argumentArray = env->NewLongArray(argPTS->size());
+        jlong* argumentArrayElements = env->GetLongArrayElements(argumentArray, nullptr);
+        size_t j = 0;
+        for (long value : *argPTS) {
+            argumentArrayElements[j++] = value;
+        }
+        env->ReleaseLongArrayElements(argumentArray, argumentArrayElements, 0);
+
+        // Call the Java method
+        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback4, basePTSArray, jClassName, jFieldName, argumentArray);
+        // Convert the returned long array to a C++ set
+        std::set<long>* result = new std::set<long>();
+        if (resultArray != nullptr) {
+            jsize length = env->GetArrayLength(resultArray);
+            jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
+            for (int i = 0; i < length; ++i) {
+                result->insert(resultElements[i]);
+            }
+            env->ReleaseLongArrayElements(resultArray, resultElements, 0);
+        }
+        // Release local references
+        env->DeleteLocalRef(jClassName);
+        env->DeleteLocalRef(jFieldName);
+        env->DeleteLocalRef(argumentArray);
+        return result;
+    };
+    ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2, cb3, cb4);
     env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "svfg", "J"), (long)svfg);
     env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "extendedPAG", "J"), (long)e);
     env->ReleaseStringUTFChars(moduleName, moduleNameStr);

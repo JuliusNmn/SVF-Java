@@ -9,4 +9,10 @@ public interface SVFAnalysisListener {
     // called when NewObject was detected.
     // context is always null, may be used in future version
     public long jniNewObject(String className, String context);
+
+    // called at GetObjectField etc. invoke site
+    public long[] getField(long[] basePTS, String className, String fieldName);
+
+    // called at SetObjectField etc, invoke site
+    public void setField(long[] basePTS, String className, String fieldName, long[] argPTS);
 }

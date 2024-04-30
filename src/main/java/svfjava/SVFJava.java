@@ -71,12 +71,25 @@ public class SVFJava {
             public long jniNewObject(String className, String context) {
                 return 1919;
             }
+            // called at GetObjectField etc. invoke site
+            public long[] getField(long[] basePTS, String className, String fieldName) {
+                System.out.println("GetField " + fieldName);
+                return basePTS;
+            }
+
+            // called at SetObjectField etc, invoke site
+            public void setField(long[] basePTS, String className, String fieldName, long[] argPTS){
+                System.out.println("SetField " + fieldName);
+            }
         });
         for (String f : module.getFunctions()) {
             System.out.println(f);
         }
         long[] resultPTS = module.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn", new long[]{666}, new long[][]{new long[]{9000}});
         System.out.println("got pts! " + resultPTS.length);
+        resultPTS = module.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_ReadJavaFieldFromNative_getMyfield", new long[]{666}, new long[][]{new long[]{432}});
+        System.out.println("got pts! " + resultPTS.length);
+
     }
 
     private native void runmain(String[] args);

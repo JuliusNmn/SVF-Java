@@ -35,7 +35,20 @@ struct JNIAllocation {
     JNIAllocation(const char* className, const llvm::CallBase *allocSite) : className(className),
                                                                              allocSite(allocSite) {}
 };
-
+struct JNIGetField {
+    const llvm::CallBase* callSite;
+    const char* fieldName;
+    const char* className;
+    JNIGetField(const char* fieldName, const char* className, const llvm::CallBase *callSite) :
+        fieldName(fieldName), className(className), callSite(callSite) {}
+};
+struct JNISetField {
+    const llvm::CallBase* callSite;
+    const char* fieldName;
+    const char* className;
+    JNISetField(const char* fieldName, const char* className, const llvm::CallBase *callSite) :
+            fieldName(fieldName), className(className), callSite(callSite) {}
+};
 class DetectNICalls {
     llvm::StringRef getPassName() const
     {
@@ -44,10 +57,14 @@ class DetectNICalls {
 
 
     void handleJniCall(const llvm::Module* module, JNICallOffset offset, const llvm::CallBase* cb);
+    void handleGetOrSetField(const llvm::Module *pModule, JNICallOffset offset, const llvm::CallBase *pBase);
     void handleNewObject(const llvm::Module *module, JNICallOffset offset, const llvm::CallBase *cb);
 public:
     void processFunction(const llvm::Function &F);
     std::map<const llvm::CallBase*, JNIInvocation*> detectedJNIInvocations;
     std::map<const llvm::CallBase*, JNIAllocation*> detectedJNIAllocations;
+    std::map<const llvm::CallBase*, JNIGetField*> detectedJNIFieldGets;
+    std::map<const llvm::CallBase*, JNISetField*> detectedJNIFieldSets;
+
 };
 #endif //SVF_JAVA_DETECTJNICALLS_H
