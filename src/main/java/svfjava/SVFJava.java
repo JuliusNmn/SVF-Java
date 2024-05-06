@@ -10,7 +10,10 @@ import java.util.Set;
 import java.util.HashSet;
 
 public class SVFJava {
+    private static boolean loaded = false;
     public static void init() {
+        if (loaded)
+            return;
         String libName = System.mapLibraryName("svf-lib");
         System.out.println("Loading " + libName);
         //System.loadLibrary("svf-lib");
@@ -25,6 +28,7 @@ public class SVFJava {
             System.exit(1);
         }
         System.load(tmpLib);
+        loaded = true;
     }
 
 
@@ -51,6 +55,31 @@ public class SVFJava {
         return lib.getAbsolutePath();
     }
 
+    public static class DummyListener implements SVFAnalysisListener {
+        public long[] nativeToJavaCallDetected(long[] basePTS, String className, String methodName, String methodSignature, long[][] argsPTSs) {
+                    System.out.println("got pts request for function " + methodName);
+                    // dummy implementation
+                    // return PTS for call base as return val of function.
+                    return basePTS;
+                    //return new long[]{};
+                }
+
+                public long jniNewObject(String className, String context) {
+                    return 1919;
+                }
+                // called at GetObjectField etc. invoke site
+                public long[] getField(long[] basePTS, String className, String fieldName) {
+                    System.out.println("listener id: " + System.identityHashCode(this));
+                    System.out.println("GetField " + fieldName);
+                    return basePTS;
+                }
+
+                // called at SetObjectField etc, invoke site
+                public void setField(long[] basePTS, String className, String fieldName, long[] argPTS){
+                    System.out.println("SetField " + fieldName);
+                }
+    }
+
     public static void main(String[] args) {
         SVFJava.init();
         if (args.length != 1) {
@@ -59,35 +88,17 @@ public class SVFJava {
         }
         String moduleName = args[0];
 
-        SVFModule module = SVFModule.createSVFModule(moduleName, new SVFAnalysisListener() {
-            public long[] nativeToJavaCallDetected(long[] basePTS, String className, String methodName, String methodSignature, long[][] argsPTSs) {
-                System.out.println("got pts request for function " + methodName);
-                // dummy implementation
-                // return PTS for call base as return val of function.
-                return basePTS;
-                //return new long[]{};
-            }
 
-            public long jniNewObject(String className, String context) {
-                return 1919;
-            }
-            // called at GetObjectField etc. invoke site
-            public long[] getField(long[] basePTS, String className, String fieldName) {
-                System.out.println("GetField " + fieldName);
-                return basePTS;
-            }
 
-            // called at SetObjectField etc, invoke site
-            public void setField(long[] basePTS, String className, String fieldName, long[] argPTS){
-                System.out.println("SetField " + fieldName);
-            }
-        });
-        for (String f : module.getFunctions()) {
+        SVFModule module1 = SVFModule.createSVFModule(moduleName, new DummyListener());
+        for (String f : module1.getFunctions()) {
             System.out.println(f);
         }
-        long[] resultPTS = module.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn", new long[]{666}, new long[][]{new long[]{9000}});
-        System.out.println("got pts! " + resultPTS.length);
-        resultPTS = module.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_ReadJavaFieldFromNative_getMyfield", new long[]{666}, new long[][]{new long[]{432}});
+        long[] resultPTS = module1.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn", new long[]{666}, new long[][]{new long[]{9000}});
+        System.out.println("got pts " + resultPTS.length);
+
+        SVFModule module2 = SVFModule.createSVFModule(moduleName, new DummyListener());
+        resultPTS = module2.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_ReadJavaFieldFromNative_getMyfield", new long[]{666}, new long[][]{new long[]{432}});
         System.out.println("got pts! " + resultPTS.length);
 
     }

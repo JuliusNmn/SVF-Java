@@ -2,7 +2,7 @@ package svfjava;
 import java.util.Set;
 import java.util.HashSet;
 public class SVFModule extends CppReference {
-    private long svfg;
+    //private long svfg;
     private long extendedPAG;
     private SVFAnalysisListener listener;
     private SVFModule(long address) {

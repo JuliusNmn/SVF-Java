@@ -121,6 +121,7 @@ private:
     void updateAndersen() {
         if (refreshAndersen) {
             customAndersen = new CustomAndersen(pag, &additionalPTS);
+            customAndersen->disablePrintStat();
             customAndersen->analyze();
             refreshAndersen = false;
         }
@@ -215,7 +216,9 @@ public:
         // (env, this, arg0, arg1, ...)
         auto args = pag->getFunArgsList(function);
         auto baseNode = pag->getValueNode(args[1]->getValue());
-        assert(args.size() == argumentsPTS.size() + 2 && "native function arg count must == size of arguments PTS + 2 ");
+        char argerror[200];
+        sprintf(argerror,  "native function arg count (%d) != size of arguments PTS (%d) + 2 ", args.size(), argumentsPTS.size());
+        assert(args.size() == argumentsPTS.size() + 2 && argerror);
         addPTS(baseNode, callBasePTS);
 
 
@@ -353,7 +356,9 @@ int main(int argc, char **argv) {
     //Andersen *ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
 
     Andersen* ander = new AndersenWaveDiff(pag, SVF::Andersen::AndersenWaveDiff_WPA, false);
+    ander->disablePrintStat();
     ander->analyze();
+
     ander->getConstraintGraph()->dump("cg");
     /// Query aliases
     /// aliasQuery(ander,value1,value2);
@@ -404,30 +409,35 @@ int main(int argc, char **argv) {
 
     int id = 0;
     auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn");
-    set<long> callbasePTS;
-    callbasePTS.insert(666);
-    vector<set<long>> argumentsPTS1;
-    set<long> arg1PTS1;
-    arg1PTS1.insert(909);
-    argumentsPTS1.push_back(arg1PTS1);
-    auto pts = e->processNativeFunction(func, callbasePTS, argumentsPTS1);
 
-    cout << pts->size() << endl;
+    set<long> callbasePTS;
+
+    callbasePTS.insert(666);
+    if (func) {
+        vector<set<long>> argumentsPTS1;
+        set<long> arg1PTS1;
+        arg1PTS1.insert(909);
+        argumentsPTS1.push_back(arg1PTS1);
+        auto pts = e->processNativeFunction(func, callbasePTS, argumentsPTS1);
+
+        cout << pts->size() << endl;
+    }
 
 
     //auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CreateJavaInstanceFromNative_createInstanceAndCallMyFunctionFromNative");
     //auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_WriteJavaFieldFromNative_setMyfield");
     auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_ReadJavaFieldFromNative_getMyfield");
-    set<long> callBasePTS;
-    callBasePTS.insert(50);
-    vector<set<long>> argumentsPTS2;
-    set<long> arg1PTS;
-    arg1PTS.insert(2);
-    argumentsPTS2.push_back(arg1PTS);
-    auto pts2 = e->processNativeFunction(func2, callbasePTS, argumentsPTS2);
+    if (func2) {
+        set<long> callBasePTS;
+        callBasePTS.insert(50);
+        vector<set<long>> argumentsPTS2;
+        set<long> arg1PTS;
+        arg1PTS.insert(2);
+        argumentsPTS2.push_back(arg1PTS);
+        auto pts2 = e->processNativeFunction(func2, callbasePTS, argumentsPTS2);
 
-    cout << pts2->size() << endl;
-
+        cout << pts2->size() << endl;
+    }
 
     //auto nativeIdentity = svfModule->getSVFFunction("nativeIdentityFunction");
 
@@ -495,21 +505,21 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
     }
 
     jclass svfModuleClass = env->GetObjectClass(svfModule);
-    jfieldID svfgField = env->GetFieldID(svfModuleClass, "svfg", "J");
-    assert(svfgField);
-    SVFG *svfg = static_cast<SVFG *>((void*)env->GetLongField(svfModule, svfgField));
-    assert(svfg);
+    //jfieldID svfgField = env->GetFieldID(svfModuleClass, "svfg", "J");
+    //assert(svfgField);
+    //SVFG *svfg = static_cast<SVFG *>((void*)env->GetLongField(svfModule, svfgField));
+    //assert(svfg);
     jfieldID ExtendedPAGField = env->GetFieldID(svfModuleClass, "extendedPAG", "J");
     assert(ExtendedPAGField);
     ExtendedPAG* e = static_cast<ExtendedPAG *>((void*)env->GetLongField(svfModule, ExtendedPAGField));
     assert(e);
 
-    cout << "svfg: " << (long)svfg << endl;
+    //cout << "svfg: " << (long)svfg << endl;
     cout << "extended svfg: " << (long)e << endl;
 
-    auto pag = svfg->getPAG();
-    assert(pag);
-    auto args = svfg->getPAG()->getFunArgsList(function);
+    //auto pag = svfg->getPAG();
+    //assert(pag);
+    //auto args = svfg->getPAG()->getFunArgsList(function);
     set<long> basePTSSet = jlongArrayToSet(env, basePTS);
     vector<set<long>> argsPTSsVector;
     // Get array length
@@ -585,22 +595,34 @@ JNIEXPORT void JNICALL Java_svfjava_SVFJava_runmain
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName, jobject listenerArg) {
     cout << "SVF-Java built at " << __DATE__ << " " << __TIME__ << endl;
     cout << "LLVM Version: " << LLVM_VERSION_STRING << endl;
+    static map<string, SVFModule*> cachedModules;
+    static map<string, SVFIR*> cachedIR;
+
     const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
     std::vector<std::string> moduleNameVec;
     moduleNameVec.push_back(moduleNameStr);
     ExtAPI::getExtAPI()->setExtBcPath(SVF_INSTALL_EXTAPI_FILE);
-    SVFModule *svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
+    SVFModule *svfModule = cachedModules[moduleNameStr];
+    SVFIR* pag = cachedIR[moduleNameStr];
+    if (!svfModule) {
+        svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
+        cachedModules[moduleNameStr] = svfModule;
+        SVFIRBuilder* builder = new SVFIRBuilder(svfModule);
+        pag = builder->build();
+        cachedIR[moduleNameStr] = pag;
+    } else {
+        cout << "using cached module" << endl;
+    }
 
     jclass svfModuleClass = env->FindClass("svfjava/SVFModule");
     jmethodID constructor = env->GetMethodID(svfModuleClass, "<init>", "(J)V");
     jobject svfModuleObject = env->NewObject(svfModuleClass, constructor, (jlong) svfModule);
 
-    SVFIRBuilder* builder = new SVFIRBuilder(svfModule);
-    SVFIR *pag = builder->build();
-    Andersen *ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
-    SVFGBuilder* svfBuilder = new SVFGBuilder();
-    SVFG *svfg = svfBuilder->buildFullSVFG(ander);
-    assert(svfg->getPAG());
+    //
+    //Andersen *ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
+    //SVFGBuilder* svfBuilder = new SVFGBuilder();
+    //SVFG *svfg = svfBuilder->buildFullSVFG(ander);
+    //assert(svfg->getPAG());
 
 
     jmethodID listenerCallback1 = env->GetMethodID(env->GetObjectClass(listenerArg), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[[J)[J");
@@ -750,7 +772,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
         return result;
     };
     ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2, cb3, cb4);
-    env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "svfg", "J"), (long)svfg);
+    //env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "svfg", "J"), (long)svfg);
     env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "extendedPAG", "J"), (long)e);
     env->ReleaseStringUTFChars(moduleName, moduleNameStr);
 
