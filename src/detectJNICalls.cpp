@@ -57,18 +57,27 @@ bool isJNIEnvOffsetCall(const Module* module, const CallBase* cb, JNICallOffset&
     return true;
 
 }
-// for a pointer P, get the first function call where the return value is stored in P, e.g:
+// for a pointer P, get the last function call where the return value is stored in P, e.g:
 // %8 = alloca %struct._jmethodID*, align 8
 // store %struct._jmethodID* %23, %struct._jmethodID** %8, align 8
 // %23 = call %struct._jmethodID* %20( ...
-CallBase* getDefiningCallsite(AllocaInst* pointer) {
-    for (const auto &item: pointer->users()) {
-        StoreInst* storeinst = dyn_cast<StoreInst>(item);
-        if (!storeinst) continue;
-        if (storeinst->getPointerOperand() != pointer) continue;
-        Value* methodIDValue = storeinst->getValueOperand();
-        return dyn_cast<CallBase>(methodIDValue);
-
+// before inst usage
+const CallBase* getDefiningCallsite(AllocaInst* pointer, const Instruction* usage, const llvm::Function& F) {
+    const CallBase* definition;
+    for (const auto &BB: F){
+        for (const auto &item: BB) {
+            if (&item == usage) {
+                return definition;
+            }
+            const StoreInst* storeinst = dyn_cast<StoreInst>(&item);
+            if (!storeinst) continue;
+            if (storeinst->getPointerOperand() != pointer) continue;
+            const Value* methodIDValue = storeinst->getValueOperand();
+            auto def = dyn_cast<CallBase>(methodIDValue);
+            if (def) {
+                definition = def;
+            }
+        }
     }
 }
 // for a jclass operand passed to a JNI function, tries to find the name of the jclass,
@@ -77,15 +86,16 @@ CallBase* getDefiningCallsite(AllocaInst* pointer) {
 // jclass cls = (*env)->FindClass(env, "Lorg/opalj/fpcf/fixtures/xl/llvm/controlflow/bidirectional/CreateJavaInstanceFromNative;");
 // jmethodID methodID = (*env)->GetMethodID(env, cls, "myJavaFunction", "(Ljava/lang/Object;)V");
 // (*env)->CallVoidMethod(env, instance, methodID, x);
-const char* getClassName(const Module* module, Value* classOperand) {
+const char* getClassName(const Module* module, Value* classOperand, const Instruction* usage, const llvm::Function& F) {
     JNINativeInterface_ j{};
     const JNICallOffset offset_FindClass = (unsigned long) (&j.FindClass) - (unsigned long) (&j);
+    const JNICallOffset offset_GetObjectClass = (unsigned long) (&j.GetObjectClass) - (unsigned long) (&j);
     AllocaInst* classAddr = dyn_cast<AllocaInst>(getPointerOperand(classOperand)) ;
     if (!classAddr) {
         errs() << "could not determine class \n";
         return nullptr;
     }
-    CallBase* getClassCall = getDefiningCallsite(classAddr);
+    const CallBase* getClassCall = getDefiningCallsite(classAddr, usage,  F);
     if (!getClassCall) {
         errs() << "could not determine origin of class\n";
         return nullptr;
@@ -100,6 +110,9 @@ const char* getClassName(const Module* module, Value* classOperand) {
     {
         Value *classNameOperand = getClassCall->getArgOperand(1);
         return getStringParameterInitializer(classNameOperand);
+    } else if (getClassJNIOffset == offset_GetObjectClass) {
+        errs() << "class definition computed dynamically with GetObjectClass\n";
+        return nullptr;
     } else {
         return nullptr;
     }
@@ -110,8 +123,9 @@ const char* getClassName(const Module* module, Value* classOperand) {
 // jclass cls = (*env)->FindClass(env, "Lorg/opalj/fpcf/fixtures/xl/llvm/controlflow/bidirectional/CreateJavaInstanceFromNative;");
 // jmethodID methodID = (*env)->GetMethodID(env, cls, "myJavaFunction", "(Ljava/lang/Object;)V");
 // (*env)->CallVoidMethod(env, instance, methodID, x);
-void DetectNICalls::handleJniCall(const Module* module, JNICallOffset offset, const CallBase* cb) {
+void DetectNICalls::handleJniCall(const Module* module, JNICallOffset offset, const CallBase* cb, const Function& F) {
     JNINativeInterface_ j{};
+    errs() << "processing jni call " << *cb << "\n";
     const JNICallOffset offset_GetMethodID = (unsigned long) (&j.GetMethodID) - (unsigned long) (&j);
     const JNICallOffset offset_FindClass = (unsigned long) (&j.FindClass) - (unsigned long) (&j);
     const JNICallOffset offset_GetObjectClass = (unsigned long) (&j.GetObjectClass) - (unsigned long) (&j);
@@ -119,10 +133,9 @@ void DetectNICalls::handleJniCall(const Module* module, JNICallOffset offset, co
     Value* obj = cb->getOperand(1);
     Value* methodIDLoad = dyn_cast<LoadInst>(cb->getOperand(2));
     if (!methodIDLoad) return;
-
     AllocaInst* methodIDAddr = dyn_cast<AllocaInst>(getPointerOperand(methodIDLoad)) ;
     if (!methodIDAddr) return;
-    CallBase* getMethodIDCall = getDefiningCallsite(methodIDAddr);
+    const CallBase* getMethodIDCall = getDefiningCallsite(methodIDAddr, cb, F);
     JNICallOffset getMethodIdOffset;
     if (!isJNIEnvOffsetCall(module, getMethodIDCall, getMethodIdOffset)) return;
     if (getMethodIdOffset != offset_GetMethodID) {
@@ -140,16 +153,16 @@ void DetectNICalls::handleJniCall(const Module* module, JNICallOffset offset, co
         errs() << "method name " << methodName << "\n";
         return;
     }
-    const char* className = getClassName(module, classOperand);
+    const char* className = getClassName(module, classOperand, getMethodIDCall, F);
     if (!className){
-        errs() << "found invoke with unknown className\n";
+        errs() << "found invoke with unknown className\n" << methodName << "\n";
     }
 
     JNIInvocation* invoke = new JNIInvocation(methodName, methodSig, className, cb);
     detectedJNIInvocations[cb] = invoke;
 }
 
-void DetectNICalls::handleGetOrSetField(const llvm::Module *module, JNICallOffset offset, const llvm::CallBase *cb) {
+void DetectNICalls::handleGetOrSetField(const llvm::Module *module, JNICallOffset offset, const llvm::CallBase *cb, const Function& F) {
     JNINativeInterface_ j{};
     const JNICallOffset offset_GetFieldID = (unsigned long) (&j.GetFieldID) - (unsigned long) (&j);
     Value* obj = cb->getOperand(1);
@@ -158,7 +171,7 @@ void DetectNICalls::handleGetOrSetField(const llvm::Module *module, JNICallOffse
 
     AllocaInst* fieldIDAddr = dyn_cast<AllocaInst>(getPointerOperand(fieldIDLoad)) ;
     if (!fieldIDAddr) return;
-    CallBase* getFieldIDCall = getDefiningCallsite(fieldIDAddr);
+    const CallBase* getFieldIDCall = getDefiningCallsite(fieldIDAddr, cb, F);
     JNICallOffset getFieldIDOffset;
     if (!isJNIEnvOffsetCall(module, getFieldIDCall, getFieldIDOffset)) return;
     if (getFieldIDOffset != offset_GetFieldID) {
@@ -175,7 +188,7 @@ void DetectNICalls::handleGetOrSetField(const llvm::Module *module, JNICallOffse
         errs() << "method name " << fieldName << "\n";
         return;
     }
-    const char* className = getClassName(module, classOperand);
+    const char* className = getClassName(module, classOperand, cb, F);
     if (!className){
         errs() << "found invoke with unknown className\n";
     }
@@ -187,10 +200,10 @@ void DetectNICalls::handleGetOrSetField(const llvm::Module *module, JNICallOffse
     }
 
 }
-
-void DetectNICalls::handleNewObject(const Module* module, JNICallOffset offset, const CallBase* cb)  {
+// NewObject or AllocObject. AllocObject doesn't take a constructor methodID.
+void DetectNICalls::handleNewObject(const Module* module, JNICallOffset offset, const CallBase* cb, const llvm::Function& F)  {
     Value* classOperand = cb->getArgOperand(1);
-    const char* className = getClassName(module, classOperand);
+    const char* className = getClassName(module, classOperand, cb, F);
     if (className){
         JNIAllocation* alo = new JNIAllocation(className, cb);
         detectedJNIAllocations[cb] = alo;
@@ -203,7 +216,11 @@ void DetectNICalls::processFunction(const llvm::Function &F) {
     const JNICallOffset offset_CallObjectMethod = (unsigned long) (&j.CallObjectMethod) - (unsigned long) (&j);
     const JNICallOffset offset_GetObjectField = (unsigned long) (&j.GetObjectField) - (unsigned long) (&j);
     const JNICallOffset offset_SetObjectField = (unsigned long) (&j.SetObjectField) - (unsigned long) (&j);
+    const JNICallOffset offset_GetObjectArrayElement = (unsigned long) (&j.GetObjectArrayElement) - (unsigned long) (&j);
+    const JNICallOffset offset_SetObjectArrayElement = (unsigned long) (&j.SetObjectArrayElement) - (unsigned long) (&j);
+
     const JNICallOffset offset_NewObject = (unsigned long) (&j.NewObject) - (unsigned long) (&j);
+    const JNICallOffset offset_AllocObject = (unsigned long) (&j.AllocObject) - (unsigned long) (&j);
     const Module* module = F.getParent();
     for (const BasicBlock &B : F) {
         for (const Instruction &I: B) {
@@ -214,12 +231,13 @@ void DetectNICalls::processFunction(const llvm::Function &F) {
                         // Found JNI callMethod, now try to resolve
                         //    jobject (JNICALL *CallObjectMethod)
                         //      (JNIEnv *env, jobject obj, jmethodID methodID, ...);
-                        handleJniCall(module, offset, cb);
-
-                    } else if (offset == offset_NewObject) {
-                        handleNewObject(module, offset, cb);
+                        handleJniCall(module, offset, cb, F);
+                    } else if (offset == offset_NewObject || offset == offset_AllocObject) {
+                        handleNewObject(module, offset, cb, F);
                     } else if (offset == offset_GetObjectField || offset == offset_SetObjectField) {
-                        handleGetOrSetField(module, offset, cb);
+                        handleGetOrSetField(module, offset, cb, F);
+                    } else if (offset == offset_GetObjectArrayElement) {
+                        detectedJNIArrayElementGets[cb] = new JNIGetArrayElement(cb);
                     }
                 }
             }

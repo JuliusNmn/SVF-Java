@@ -49,6 +49,14 @@ struct JNISetField {
     JNISetField(const char* fieldName, const char* className, const llvm::CallBase *callSite) :
             fieldName(fieldName), className(className), callSite(callSite) {}
 };
+struct JNIGetArrayElement {
+    const llvm::CallBase* callSite;
+    JNIGetArrayElement(const llvm::CallBase *callSite) : callSite(callSite) {}
+};
+struct JNISetArrayElement {
+    const llvm::CallBase* callSite;
+    JNISetArrayElement(const llvm::CallBase *callSite) : callSite(callSite) {}
+};
 class DetectNICalls {
     llvm::StringRef getPassName() const
     {
@@ -56,15 +64,18 @@ class DetectNICalls {
     }
 
 
-    void handleJniCall(const llvm::Module* module, JNICallOffset offset, const llvm::CallBase* cb);
-    void handleGetOrSetField(const llvm::Module *pModule, JNICallOffset offset, const llvm::CallBase *pBase);
-    void handleNewObject(const llvm::Module *module, JNICallOffset offset, const llvm::CallBase *cb);
+    void handleJniCall(const llvm::Module* module, JNICallOffset offset, const llvm::CallBase* cb, const llvm::Function& B);
+    void handleGetOrSetField(const llvm::Module *pModule, JNICallOffset offset, const llvm::CallBase *pBase, const llvm::Function& B);
+    void handleNewObject(const llvm::Module *module, JNICallOffset offset, const llvm::CallBase *cb, const llvm::Function& B);
 public:
     void processFunction(const llvm::Function &F);
     std::map<const llvm::CallBase*, JNIInvocation*> detectedJNIInvocations;
     std::map<const llvm::CallBase*, JNIAllocation*> detectedJNIAllocations;
     std::map<const llvm::CallBase*, JNIGetField*> detectedJNIFieldGets;
     std::map<const llvm::CallBase*, JNISetField*> detectedJNIFieldSets;
+
+    std::map<const llvm::CallBase*, JNIGetArrayElement*> detectedJNIArrayElementGets;
+    std::map<const llvm::CallBase*, JNISetArrayElement*> detectedJNIArrayElementSets;
 
 };
 #endif //SVF_JAVA_DETECTJNICALLS_H

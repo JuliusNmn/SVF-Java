@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Arrays;
 
 public class SVFJava {
     private static boolean loaded = false;
@@ -56,27 +57,59 @@ public class SVFJava {
     }
 
     public static class DummyListener implements SVFAnalysisListener {
+        long counter = 1;
         public long[] nativeToJavaCallDetected(long[] basePTS, String className, String methodName, String methodSignature, long[][] argsPTSs) {
-                    System.out.println("got pts request for function " + methodName);
+                    System.out.println("got pts request for function " + methodName + " arg count " + argsPTSs.length);
+                    System.out.println("base pts: " + Arrays.toString(basePTS));
+                    for (int i = 0; i < argsPTSs.length; i++) {
+                        System.out.println("arg " + i + " pts: " + Arrays.toString(argsPTSs[i]));
+                    }
                     // dummy implementation
                     // return PTS for call base as return val of function.
-                    return basePTS;
-                    //return new long[]{};
+                    //return basePTS;
+                    long as = counter++;
+                    System.out.println("returning dummy alloc site " + as);
+                    return new long[]{as};
                 }
 
                 public long jniNewObject(String className, String context) {
-                    return 1919;
+                    long as = counter++;
+                    System.out.println("returning dummy alloc site " + as);
+                    return as;
                 }
                 // called at GetObjectField etc. invoke site
                 public long[] getField(long[] basePTS, String className, String fieldName) {
-                    System.out.println("listener id: " + System.identityHashCode(this));
                     System.out.println("GetField " + fieldName);
-                    return basePTS;
+                    long as = counter++;
+                    System.out.println("returning dummy alloc site " + as);
+                    return new long[]{as};
                 }
 
                 // called at SetObjectField etc, invoke site
                 public void setField(long[] basePTS, String className, String fieldName, long[] argPTS){
-                    System.out.println("SetField " + fieldName);
+                    System.out.println("SetField " + fieldName + " pts size: " + argPTS.length);
+                    if (argPTS != null){
+                        for (long l : argPTS){
+                            System.out.println("alloc site " + l);
+                        }
+                    }
+                }
+
+                // called at GetArrayElement. index insensitive
+                public long[] getArrayElement(long[] basePTS){
+                    System.out.println("GetArrayElement " + basePTS.length);
+                    if (basePTS != null){
+                        for (long l : basePTS){
+                            System.out.println("array alloc site " + l);
+                        }
+                    }
+                    long as = counter++;
+                    System.out.println("returning dummy alloc site " + as);
+                    return new long[]{as};
+                }
+
+                // called at SetArrayElement. index insensitive
+                public void setArrayElement(long[] basePTS, long[] argPTS){
                 }
     }
 
@@ -89,19 +122,36 @@ public class SVFJava {
         String moduleName = args[0];
 
 
-
+        System.out.println("Loading Module " + moduleName);
         SVFModule module1 = SVFModule.createSVFModule(moduleName, new DummyListener());
+        System.out.println("Loaded module.");
         for (String f : module1.getFunctions()) {
-            System.out.println(f);
+
+            if (f.equals("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform") && f.startsWith("Java_")) {
+                System.out.println(f);
+                SVFModule module2 = SVFModule.createSVFModule(moduleName, new DummyListener());
+                int argc = module2.getFunctionArgCount(f);
+                long[][] argsPTS = new long[argc-2][];
+                for (int i = 0; i < argc - 2; i++){
+                    argsPTS[i] = new long[]{1000L + i};
+                    long[] a = argsPTS[i];
+                    System.out.println(a[0]);
+                }
+
+                long[] resultPTS = module2.processFunction(f, new long[]{666}, argsPTS);
+                System.out.println("got pts! " + resultPTS.length);
+                for (long i : resultPTS){
+                    System.out.println(i);
+                }
+            }
         }
-        long[] resultPTS = module1.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn", new long[]{666}, new long[][]{new long[]{9000}});
+        /*long[] resultPTS = module1.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn", new long[]{666}, new long[][]{new long[]{9000}});
         System.out.println("got pts " + resultPTS.length);
 
         SVFModule module2 = SVFModule.createSVFModule(moduleName, new DummyListener());
-        resultPTS = module2.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_ReadJavaFieldFromNative_getMyfield", new long[]{666}, new long[][]{new long[]{432}});
+        resultPTS = module2.processFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_unidirectional_WriteJavaFieldFromNative_setMyfield", new long[]{666}, new long[][]{new long[]{432}});
         System.out.println("got pts! " + resultPTS.length);
-
+        */
     }
 
-    private native void runmain(String[] args);
 }

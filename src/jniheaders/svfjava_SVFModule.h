@@ -10,26 +10,35 @@ extern "C" {
 /*
  * Class:     svfjava_SVFModule
  * Method:    createSVFModule
- * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener)Lsvfjava/SVFModule;
+ * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener;)Lsvfjava/SVFModule;
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule
-  (JNIEnv *, jclass, jstring, jobject);
+        (JNIEnv *, jclass, jstring, jobject);
 
 /*
  * Class:     svfjava_SVFModule
  * Method:    getFunctions
- * Signature: ()[Ljava/lnag/String;
+ * Signature: ()[Ljava/lang/String;
  */
 JNIEXPORT jobjectArray JNICALL Java_svfjava_SVFModule_getFunctions
-  (JNIEnv * env, jobject jThis);
+        (JNIEnv *, jobject);
+
+/*
+ * Class:     svfjava_SVFModule
+ * Method:    getFunctionArgCount
+ * Signature: (Ljava/lang/String;)I
+ */
+JNIEXPORT jint JNICALL Java_svfjava_SVFModule_getFunctionArgCount
+        (JNIEnv *, jobject, jstring);
 
 /*
  * Class:     svfjava_SVFModule
  * Method:    processFunction
- * Signature: (Ljava/lang/String;[J[J)[J
+ * Signature: (Ljava/lang/String;[J[[J)[J
  */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_processFunction
-        (JNIEnv * env, jobject svfModule, jstring functionName, jlongArray basePTS, jobjectArray argsPTSs);
+JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
+        (JNIEnv *, jobject, jstring, jlongArray, jobjectArray);
+
 #ifdef __cplusplus
 }
 #endif

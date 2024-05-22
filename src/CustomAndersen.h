@@ -9,6 +9,7 @@
 #include "WPA/Andersen.h"
 #include "SVF-LLVM/SVFIRBuilder.h"
 using namespace SVF;
+// this custom implementation adds additional points-to-sets to a PAG before Andersen is performed.
 class CustomAndersen : public SVF::AndersenWaveDiff {
     // extend initial PTS of nodes before Andersen is computed.
     // nodes in PTS must exist in PAG, use addDummyNode to add them.
@@ -17,6 +18,7 @@ class CustomAndersen : public SVF::AndersenWaveDiff {
 public:
     CustomAndersen(SVFIR* _pag, std::map<NodeID, std::set<NodeID>*>* additionalPTS, PTATY type = AndersenWaveDiff_WPA, bool alias_check = true): AndersenWaveDiff(_pag, type, alias_check), additionalPTS(additionalPTS) {}
     virtual void initialize() override;
+
 };
 
 

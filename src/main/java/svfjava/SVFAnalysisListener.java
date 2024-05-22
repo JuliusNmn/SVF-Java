@@ -15,4 +15,12 @@ public interface SVFAnalysisListener {
 
     // called at SetObjectField etc, invoke site
     public void setField(long[] basePTS, String className, String fieldName, long[] argPTS);
+
+    // called at GetArrayElement. index insensitive
+    public long[] getArrayElement(long[] basePTS);
+
+    // called at SetArrayElement. index insensitive
+    public void setArrayElement(long[] basePTS, long[] argPTS);
+
+
 }

@@ -11,7 +11,7 @@ public class SVFModule extends CppReference {
 
     public static native SVFModule createSVFModule(String moduleName, SVFAnalysisListener listener);
     public native String[] getFunctions();
-
+    public native int getFunctionArgCount(String functionName);
     public native long[] processFunction(String function, long[] basePTS, long[][] argsPTSs);
 
 

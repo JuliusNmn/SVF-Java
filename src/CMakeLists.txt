@@ -25,7 +25,9 @@ add_executable(svf-ex ${SOURCES}
         detectJNICalls.cpp
         detectJNICalls.h
         CustomAndersen.cpp
-        CustomAndersen.h)
+        CustomAndersen.h
+        svfjava_interface.cpp
+        svf-ex.h)
 target_compile_options(svf-ex PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-g>
     )
