@@ -40,11 +40,6 @@ typedef std::function<std::set<long>*(std::set<long>* arrayPTS)> CB_GetArrayElem
 class ExtendedPAG {
 
 private:
-    CB_SetArgGetReturnPTS callback_ReportArgPTSGetReturnPTS;
-    CB_GenerateNativeAllocSiteId callback_GenerateNativeAllocSiteId;
-    CB_GetFieldPTS callback_GetFieldPTS;
-    CB_SetFieldPTS callback_SetFieldPTS;
-    CB_GetArrayElementPTS  callback_GetArrayElementPTS;
 
 
     SVFIR* pag;
@@ -85,12 +80,7 @@ private:
     std::set<long>* getPTS(NodeID node, const JNIInvocation* requestCallsite = nullptr);
 
 public:
-    ExtendedPAG(SVFModule* module, SVFIR* pag,
-                CB_SetArgGetReturnPTS callback_SetArgGetReturnPTS,
-                CB_GenerateNativeAllocSiteId callback_GenerateNativeAllocSiteId,
-                CB_GetFieldPTS callback_GetFieldPTS,
-                CB_SetFieldPTS callback_SetFieldPTS,
-                CB_GetArrayElementPTS  callback_GetArrayElementPTS);
+    ExtendedPAG(SVFModule* module, SVFIR* pag);
 
     // main entry point for native analysis.
     // called from java analysis when PTS for native function call args (+ base) are known
@@ -100,8 +90,14 @@ public:
     // this reports callsite arguments of all jni callsites and field sets to the java analysis
     // transitively (for the passed function plus any called functions)!
     void reportArgAndFieldWritePTS(const SVFFunction* function, std::set<const SVFFunction*>* processed) ;
-private:
 
+
+    CB_SetArgGetReturnPTS callback_ReportArgPTSGetReturnPTS;
+    CB_GenerateNativeAllocSiteId callback_GenerateNativeAllocSiteId;
+    CB_GetFieldPTS callback_GetFieldPTS;
+    CB_SetFieldPTS callback_SetFieldPTS;
+    CB_GetArrayElementPTS  callback_GetArrayElementPTS;
+    SVFModule* module;
 };
 
 

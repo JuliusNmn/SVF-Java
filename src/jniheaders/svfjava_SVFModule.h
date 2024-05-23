@@ -13,7 +13,7 @@ extern "C" {
  * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener;)Lsvfjava/SVFModule;
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule
-        (JNIEnv *, jclass, jstring, jobject);
+        (JNIEnv *, jclass, jstring);
 
 /*
  * Class:     svfjava_SVFModule
@@ -37,7 +37,7 @@ JNIEXPORT jint JNICALL Java_svfjava_SVFModule_getFunctionArgCount
  * Signature: (Ljava/lang/String;[J[[J)[J
  */
 JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
-        (JNIEnv *, jobject, jstring, jlongArray, jobjectArray);
+        (JNIEnv *, jobject, jstring, jlongArray, jobjectArray, jobject);
 
 #ifdef __cplusplus
 }

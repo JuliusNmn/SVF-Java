@@ -52,7 +52,7 @@ std::set<long> jlongArrayToSet(JNIEnv *env, jlongArray arr) {
  * Signature: (Ljava/lang/String;[J[J)[J
  */
 JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
-        (JNIEnv * env, jobject svfModule, jstring functionName, jlongArray basePTS, jobjectArray argsPTSs) {
+        (JNIEnv * env, jobject svfModule, jstring functionName, jlongArray basePTS, jobjectArray argsPTSs, jobject listenerArg) {
     // get data structures (SVFModule, SVFFunction, SVFG, ExtendedPAG)
     SVFModule *module = static_cast<SVFModule *>(getCppReferencePointer(env, svfModule));
     assert(module);
@@ -79,99 +79,21 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     //outs() << "svfg: " << (long)svfg << ENDL;
     outs() << "extended svfg: " << (long)e << ENDL;
 
-    //auto pag = svfg->getPAG();
-    //assert(pag);
-    //auto args = svfg->getPAG()->getFunArgsList(function);
-    set<long> basePTSSet = jlongArrayToSet(env, basePTS);
-    vector<set<long>> argsPTSsVector;
-    // Get array length
-    jsize argsCount = env->GetArrayLength(argsPTSs);
-    outs() << "passed arg count: " << argsCount << ENDL;
-    outs() << "svffunction arg count: " << function->arg_size() << ENDL;
-    // Iterate over args
-    for (int i = 0; i < argsCount; ++i) {
-        outs() << i << ENDL;
-        // Get the arg PTS (which is a jlongArray)
-        jlongArray rowArray = (jlongArray) env->GetObjectArrayElement(argsPTSs, i);
-        set<long> rowSet = jlongArrayToSet(env, rowArray);
-        // Add the PTS to the args PTS vector
-        argsPTSsVector.push_back(rowSet);
-    }
 
-    // public Set<JavaAllocSite> nativeToJavaCallDetected(Set<JavaAllocSite> base, String methodName, String methodSignature, Set<JavaAllocSite>[] args);
-    // dot -Grankdir=LR -Tpdf pag.dot -o pag.pdf
-    // dot -Grankdir=LR -Tpdf pag2.dot -o pag2.pdf
-    // dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
-    // dot -Grankdir=LR -Tpdf svfg2.dot -o svfg2.pdf
-    std::vector<jobject> argsV;
-    outs() << "process function" << ENDL;
-    set<long>* returnPTS = e->processNativeFunction(function, basePTSSet, argsPTSsVector);
-    jlongArray returnPTSArray = env->NewLongArray(returnPTS->size());
-    jlong* returnPTSArrayElements = env->GetLongArrayElements(returnPTSArray, nullptr);
-    int i = 0;
-    outs() << "reporting return PTS for function " << function->getName() << ENDL;
-    outs() << "PTS size: " << returnPTS->size() << " elements: ";
-    for (long value : *returnPTS) {
-        returnPTSArrayElements[i++] = value;
-        outs() << value;
-    }
-    outs() << ENDL;
-    delete returnPTS;
-    env->ReleaseLongArrayElements(returnPTSArray, returnPTSArrayElements, 0);
-    return returnPTSArray;
-}
-
-/*
- * Class:     svfjava_SVFModule
- * Method:    createSVFModule
- * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener;)Lsvfjava/SVFModule;
- */
-JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName, jobject listenerArg) {
-    outs() << "SVF-Java built at " << __DATE__ << " " << __TIME__ << ENDL;
-    outs() << "LLVM Version: " << LLVM_VERSION_STRING << ENDL;
-    static map<string, SVFModule*> cachedModules;
-    static map<string, SVFIR*> cachedIR;
-
-    const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
-    std::vector<std::string> moduleNameVec;
-    moduleNameVec.push_back(moduleNameStr);
-    ExtAPI::getExtAPI()->setExtBcPath(SVF_INSTALL_EXTAPI_FILE);
-    SVFModule *svfModule = cachedModules[moduleNameStr];
-    SVFIR* pag = cachedIR[moduleNameStr];
-    if (!svfModule) {
-        svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
-        cachedModules[moduleNameStr] = svfModule;
-        SVFIRBuilder* builder = new SVFIRBuilder(svfModule);
-        pag = builder->build();
-        cachedIR[moduleNameStr] = pag;
-    } else {
-        outs() << "using cached module" << ENDL;
-    }
-
-    jclass svfModuleClass = env->FindClass("svfjava/SVFModule");
-    jmethodID constructor = env->GetMethodID(svfModuleClass, "<init>", "(J)V");
-    jobject svfModuleObject = env->NewObject(svfModuleClass, constructor, (jlong) svfModule);
-
-    //
-    //Andersen *ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
-    //SVFGBuilder* svfBuilder = new SVFGBuilder();
-    //SVFG *svfg = svfBuilder->buildFullSVFG(ander);
-    //assert(svfg->getPAG());
-
-
-    jmethodID listenerCallback1 = env->GetMethodID(env->GetObjectClass(listenerArg), "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[[J)[J");
+    jclass listenerClass = env->GetObjectClass(listenerArg);
+    jmethodID listenerCallback1 = env->GetMethodID(listenerClass, "nativeToJavaCallDetected", "([JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[[J)[J");
     assert(listenerCallback1);
-    jmethodID listenerCallback2 = env->GetMethodID(env->GetObjectClass(listenerArg), "jniNewObject", "(Ljava/lang/String;Ljava/lang/String;)J");
+    jmethodID listenerCallback2 = env->GetMethodID(listenerClass, "jniNewObject", "(Ljava/lang/String;Ljava/lang/String;)J");
     assert(listenerCallback2);
-    jmethodID listenerCallback3 = env->GetMethodID(env->GetObjectClass(listenerArg), "getField", "([JLjava/lang/String;Ljava/lang/String;)[J");
+    jmethodID listenerCallback3 = env->GetMethodID(listenerClass, "getField", "([JLjava/lang/String;Ljava/lang/String;)[J");
     assert(listenerCallback3);
-    jmethodID listenerCallback4 = env->GetMethodID(env->GetObjectClass(listenerArg), "setField", "([JLjava/lang/String;Ljava/lang/String;[J)V");
+    jmethodID listenerCallback4 = env->GetMethodID(listenerClass, "setField", "([JLjava/lang/String;Ljava/lang/String;[J)V");
     assert(listenerCallback4);
-    jmethodID listenerCallback5 = env->GetMethodID(env->GetObjectClass(listenerArg), "getArrayElement", "([J)[J");
+    jmethodID listenerCallback5 = env->GetMethodID(listenerClass, "getArrayElement", "([J)[J");
     assert(listenerCallback5);
 
-    jobject listener = env->NewGlobalRef(listenerArg);
-
+    //jobject listener = env->NewGlobalRef(listenerArg);
+    jobject listener = listenerArg;
 
     CB_SetArgGetReturnPTS cb1 = [env, listener, listenerCallback1](set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS) {
         outs() << "calling java svf listener. detected method call to " << methodName << " signature " << methodSignature << ENDL;
@@ -341,9 +263,97 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
 
         return result;
     };
-    ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2, cb3, cb4, cb5);
+
+    e->callback_ReportArgPTSGetReturnPTS = cb1;
+    e->callback_GenerateNativeAllocSiteId = cb2;
+    e->callback_GetFieldPTS = cb3;
+    e->callback_SetFieldPTS = cb4;
+    e->callback_GetArrayElementPTS = cb5;
+
+    //auto pag = svfg->getPAG();
+    //assert(pag);
+    //auto args = svfg->getPAG()->getFunArgsList(function);
+    set<long> basePTSSet = jlongArrayToSet(env, basePTS);
+    vector<set<long>> argsPTSsVector;
+    // Get array length
+    jsize argsCount = env->GetArrayLength(argsPTSs);
+    outs() << "passed arg count: " << argsCount << ENDL;
+    outs() << "svffunction arg count: " << function->arg_size() << ENDL;
+    // Iterate over args
+    for (int i = 0; i < argsCount; ++i) {
+        outs() << i << ENDL;
+        // Get the arg PTS (which is a jlongArray)
+        jlongArray rowArray = (jlongArray) env->GetObjectArrayElement(argsPTSs, i);
+        set<long> rowSet = jlongArrayToSet(env, rowArray);
+        // Add the PTS to the args PTS vector
+        argsPTSsVector.push_back(rowSet);
+    }
+
+    // public Set<JavaAllocSite> nativeToJavaCallDetected(Set<JavaAllocSite> base, String methodName, String methodSignature, Set<JavaAllocSite>[] args);
+    // dot -Grankdir=LR -Tpdf pag.dot -o pag.pdf
+    // dot -Grankdir=LR -Tpdf pag2.dot -o pag2.pdf
+    // dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
+    // dot -Grankdir=LR -Tpdf svfg2.dot -o svfg2.pdf
+    std::vector<jobject> argsV;
+    outs() << "process function" << ENDL;
+    set<long>* returnPTS = e->processNativeFunction(function, basePTSSet, argsPTSsVector);
+    jlongArray returnPTSArray = env->NewLongArray(returnPTS->size());
+    jlong* returnPTSArrayElements = env->GetLongArrayElements(returnPTSArray, nullptr);
+    int i = 0;
+    outs() << "reporting return PTS for function " << function->getName() << ENDL;
+    outs() << "PTS size: " << returnPTS->size() << " elements: ";
+    for (long value : *returnPTS) {
+        returnPTSArrayElements[i++] = value;
+        outs() << value;
+    }
+    outs() << ENDL;
+    delete returnPTS;
+    env->ReleaseLongArrayElements(returnPTSArray, returnPTSArrayElements, 0);
+    return returnPTSArray;
+}
+
+/*
+ * Class:     svfjava_SVFModule
+ * Method:    createSVFModule
+ * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener;)Lsvfjava/SVFModule;
+ */
+JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName) {
+    outs() << "SVF-Java built at " << __DATE__ << " " << __TIME__ << ENDL;
+    outs() << "LLVM Version: " << LLVM_VERSION_STRING << ENDL;
+    static map<string, ExtendedPAG*> cachedModules;
+
+    const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
+    std::vector<std::string> moduleNameVec;
+    moduleNameVec.push_back(moduleNameStr);
+    ExtAPI::getExtAPI()->setExtBcPath(SVF_INSTALL_EXTAPI_FILE);
+    ExtendedPAG *ex = cachedModules[moduleNameStr];
+    SVFModule *svfModule;
+    if (!ex) {
+        svfModule = LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
+        SVFIRBuilder* builder = new SVFIRBuilder(svfModule);
+        SVFIR *pag = builder->build();
+        ex = new ExtendedPAG(svfModule, pag);
+
+        cachedModules[moduleNameStr] = ex;
+
+    } else {
+        svfModule = ex->module;
+        outs() << "using cached module " << moduleNameStr << ENDL;
+    }
+    assert(ex);
+    assert(svfModule);
+    jclass svfModuleClass = env->FindClass("svfjava/SVFModule");
+    jmethodID constructor = env->GetMethodID(svfModuleClass, "<init>", "(J)V");
+    jobject svfModuleObject = env->NewObject(svfModuleClass, constructor, (jlong) svfModule);
+
+    //
+    //Andersen *ander = AndersenWaveDiff::createAndersenWaveDiff(pag);
+    //SVFGBuilder* svfBuilder = new SVFGBuilder();
+    //SVFG *svfg = svfBuilder->buildFullSVFG(ander);
+    //assert(svfg->getPAG());
+
     //env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "svfg", "J"), (long)svfg);
-    env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "extendedPAG", "J"), (long)e);
+    env->SetLongField(svfModuleObject, env->GetFieldID(svfModuleClass, "extendedPAG", "J"), (long)ex);
     env->ReleaseStringUTFChars(moduleName, moduleNameStr);
 
     return svfModuleObject;

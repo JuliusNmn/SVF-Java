@@ -123,14 +123,15 @@ public class SVFJava {
 
 
         System.out.println("Loading Module " + moduleName);
-        SVFModule module1 = SVFModule.createSVFModule(moduleName, new DummyListener());
+        SVFModule module1 = SVFModule.createSVFModule(moduleName);
         System.out.println("Loaded module.");
         for (String f : module1.getFunctions()) {
 
-            if (f.equals("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform") && f.startsWith("Java_")) {
+            if (f.equals("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_unidirectional_NativeIdentityFunction_identity") && f.startsWith("Java_")) {
                 System.out.println(f);
-                SVFModule module2 = SVFModule.createSVFModule(moduleName, new DummyListener());
+                SVFModule module2 = SVFModule.createSVFModule(moduleName);
                 int argc = module2.getFunctionArgCount(f);
+                //System.out.println(module2.getNativeAllocSites().size());
                 long[][] argsPTS = new long[argc-2][];
                 for (int i = 0; i < argc - 2; i++){
                     argsPTS[i] = new long[]{1000L + i};
@@ -138,7 +139,7 @@ public class SVFJava {
                     System.out.println(a[0]);
                 }
 
-                long[] resultPTS = module2.processFunction(f, new long[]{666}, argsPTS);
+                long[] resultPTS = module2.processFunction(f, new long[]{666}, argsPTS, new DummyListener());
                 System.out.println("got pts! " + resultPTS.length);
                 for (long i : resultPTS){
                     System.out.println(i);

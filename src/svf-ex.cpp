@@ -84,17 +84,15 @@ void ExtendedPAG::addPTS(NodeID node, set<long> customNodes) {
     CustomAndersen* customAndersen;
 
     void ExtendedPAG::updateAndersen() {
-        if (refreshAndersen) {
-            customAndersen = new CustomAndersen(pag, &additionalPTS);
-            customAndersen->disablePrintStat();
-            customAndersen->analyze();
-            refreshAndersen = false;
-        }
+        outs() << "running andersen's analysis with " << additionalPTS.size() << " additional Points-to edges" << ENDL;
+        customAndersen = new CustomAndersen(pag, &additionalPTS);
+        customAndersen->disablePrintStat();
+        customAndersen->analyze();
+        refreshAndersen = false;
     }
 
     // get PTS for return node / callsite param (+ base) node
     set<long>* ExtendedPAG::getPTS(NodeID node, const JNIInvocation* requestCallsite) {
-        updateAndersen();
         auto pts = customAndersen->getPts(node);
         set<long>* javaAllocPTS = new set<long>();
         for (const NodeID allocNode: pts) {
@@ -125,20 +123,11 @@ void ExtendedPAG::addPTS(NodeID node, set<long> customNodes) {
         return javaAllocPTS;
     }
 
-ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag,
-                CB_SetArgGetReturnPTS callback_SetArgGetReturnPTS,
-                CB_GenerateNativeAllocSiteId callback_GenerateNativeAllocSiteId,
-                CB_GetFieldPTS callback_GetFieldPTS,
-                CB_SetFieldPTS callback_SetFieldPTS,
-                CB_GetArrayElementPTS callback_GetArrayElementPTS) : pag(pag),
-                                                       callback_ReportArgPTSGetReturnPTS(callback_SetArgGetReturnPTS),
-                                                       callback_GenerateNativeAllocSiteId(callback_GenerateNativeAllocSiteId),
-                                                       callback_GetFieldPTS(callback_GetFieldPTS),
-                                                       callback_SetFieldPTS(callback_SetFieldPTS),
-                                                       callback_GetArrayElementPTS(callback_GetArrayElementPTS){
+ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag): pag(pag) {
+        this->module = module;
         const llvm::Module* lm = LLVMModuleSet::getLLVMModuleSet()->getMainLLVMModule();
         detectedJniCalls = new DetectNICalls();
-
+        updateAndersen();
         for (const auto &svfFunction: *module) {
             const llvm::Function* llvmFunction = llvm::dyn_cast<llvm::Function>(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(svfFunction));
             detectedJniCalls->processFunction(*llvmFunction);
@@ -158,14 +147,7 @@ ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag,
         outs() << " detected " << detectedJniCalls->detectedJNIAllocations.size() << " JNI alloc sites" << ENDL;
         for (const auto &item: detectedJniCalls->detectedJNIAllocations) {
             outs() << "JNI alloc site " << item.second->className << ENDL;
-            auto inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(item.first);
-            NodeID callsiteNode = pag->getValueNode(inst);
-            long id = callback_GenerateNativeAllocSiteId(item.second->className, nullptr);
-            NodeID allocSiteDummyNode = createOrAddDummyNode(id);
-            set<NodeID>* s = new set<NodeID>();
-            s->insert(allocSiteDummyNode);
-            additionalPTS[callsiteNode] = s;
-            pagDummyNodeToJavaAllocNode[callsiteNode] = id;
+
         }
 
         outs() << "detected " << detectedJniCalls->detectedJNIFieldGets.size() << " JNI GetFields" << ENDL;
@@ -195,11 +177,31 @@ ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag,
 
     }
 
-    // main entry point for native analysis.
+
+    // main entry point for native detector.
     // called from java analysis when PTS for native function call args (+ base) are known
     // gets PTS for return value, requests PTS from java analysis on demand
     // also reports argument points to sets for all transitively called jni callsites (CallMethod + SetField)
+
+
     set<long>* ExtendedPAG::processNativeFunction(const SVFFunction* function, set<long> callBasePTS, vector<set<long>> argumentsPTS) {
+
+        // todo: add allocsites as they are discovered, using Points-to-analysis for class names etc
+        if (pagDummyNodeToJavaAllocNode.empty()) {
+            for (const auto &item: detectedJniCalls->detectedJNIAllocations) {
+                auto inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(item.first);
+                NodeID callsiteNode = pag->getValueNode(inst);
+                long id = callback_GenerateNativeAllocSiteId(item.second->className, nullptr);
+                NodeID allocSiteDummyNode = createOrAddDummyNode(id);
+                set<NodeID> *s = new set<NodeID>();
+                s->insert(allocSiteDummyNode);
+                additionalPTS[callsiteNode] = s;
+                pagDummyNodeToJavaAllocNode[callsiteNode] = id;
+                outs() << "JNI alloc site " << item.second->className << " id " << id << " nodeId " << allocSiteDummyNode << ENDL;
+            }
+        }
+
+
         // (env, this, arg0, arg1, ...)
         auto name =  function->getName();
         outs() << "ExtendedPAG::processNativeFunction " << name << ENDL;
@@ -218,6 +220,9 @@ ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag,
             auto argPTS = argumentsPTS[i];
             addPTS(argNode, argPTS);
         }
+
+        // only run andersen once per query.
+        updateAndersen();
 
         NodeID retNode = pag->getReturnNode(function);
         set<long>* javaPTS = getPTS(retNode);
@@ -418,17 +423,22 @@ int main(int argc, char **argv) {
         outs() << "GetArrayElement " << arrayPTS << ENDL;
         return arrayPTS;
     };
-    ExtendedPAG* e = new ExtendedPAG(svfModule, pag, cb1, cb2, cb3, cb4, cb5);
+    ExtendedPAG* e = new ExtendedPAG(svfModule, pag);
 
-
+    e->callback_ReportArgPTSGetReturnPTS = cb1;
+    e->callback_GenerateNativeAllocSiteId = cb2;
+    e->callback_GetFieldPTS = cb3;
+    e->callback_SetFieldPTS = cb4;
+    e->callback_GetArrayElementPTS = cb5;
     int id = 0;
     auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn");
 
     set<long> callbasePTS;
 
     callbasePTS.insert(666);
-    for (const auto &function: svfModule->getFunctionSet()) {
+    for (const auto &xxx: svfModule->getFunctionSet()) {
         //auto function = svfModule->getSVFFunction("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform");
+        auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_unidirectional_NativeIdentityFunction_identity");
         //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_bidirectional_CallJavaFunctionFromNative_callMyJavaFunctionFromNative");
 
         if (function->getName().find("Java_") == 0) {
