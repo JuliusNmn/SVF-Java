@@ -57,6 +57,8 @@ private:
     std::map<long, NodeID> javaAllocNodeToSVFDummyNode;
     std::map<NodeID, long> pagDummyNodeToJavaAllocNode;
 
+    std::set<NodeID> registeredJavaAllocSites;
+
     CustomAndersen* customAndersen;
     bool refreshAndersen = true;
     void updateAndersen();
