@@ -49,9 +49,7 @@ private:
     std::map<NodeID, std::set<NodeID>*> additionalPTS;
     // for each detected JNI interaction callsite, a dummy node is created
     // if a requested pts contains one of these nodes,
-    std::map<NodeID, JNIInvocation*> jniCallsiteDummyNodes;
-    std::map<NodeID, JNIGetField*> jniGetFieldDummyNodes;
-    std::map<NodeID, JNIGetArrayElement*> jniGetArrElementDummyNodes;
+    std::map<NodeID, std::pair<SVFCallInst*, JNICallOffset>*> jniCallsiteDummyNodes;
 
     // map from custom nodeID to dummyObjNode nodeID.
     std::map<long, NodeID> javaAllocNodeToSVFDummyNode;
@@ -63,14 +61,16 @@ private:
     bool refreshAndersen = true;
     void updateAndersen();
     void addPTS(NodeID node, std::set<long> customNodes);
+    long getTotalSizeOfAdditionalPTS();
 
-    std::set<long>* getReturnPTSForJNICallsite(const JNIInvocation* jniInv) ;
-    std::set<long>* getPTSForField(const JNIGetField* getField) ;
-    void reportSetField(const JNISetField* setField) ;
-    std::set<long>* getPTSForArray(const JNIGetArrayElement* getField);
-
-
-
+    std::set<long>* getReturnPTSForJNICallsite(const llvm::CallBase* callsite) ;
+    std::set<long>* getPTSForField(const llvm::CallBase* callsite) ;
+    void reportSetField(const llvm::CallBase* callsite) ;
+    std::set<long>* getPTSForArray(const llvm::CallBase* callsite);
+    const SVFCallInst* retrieveGetFieldID(const llvm::CallBase* getOrSetField);
+    const char* getClassName(const SVFValue* paramClass);
+    void handleJNIAllocSite(const llvm::CallBase* inst);
+    void solve(const SVFFunction* function);
     NodeID createOrAddDummyNode(long customId);
 
 
@@ -79,7 +79,7 @@ private:
     // native code often loads / stores to addresses, llvm's SSA is not guaranteed and cycles are possible
     // e.g. obj = CallObjectMethod(env, obj).
     // pts of obj will include this callsite
-    std::set<long>* getPTS(NodeID node, const JNIInvocation* requestCallsite = nullptr);
+    std::set<long>* getPTS(NodeID node);
 
 public:
     ExtendedPAG(SVFModule* module, SVFIR* pag);
@@ -91,7 +91,7 @@ public:
     std::set<long>* processNativeFunction(const SVFFunction* function, std::set<long> callBasePTS, std::vector<std::set<long>> argumentsPTS);
     // this reports callsite arguments of all jni callsites and field sets to the java analysis
     // transitively (for the passed function plus any called functions)!
-    void reportArgAndFieldWritePTS(const SVFFunction* function, std::set<const SVFFunction*>* processed) ;
+    void runDetector(const SVFFunction* function, std::set<const SVFFunction*>* processed) ;
 
 
     CB_SetArgGetReturnPTS callback_ReportArgPTSGetReturnPTS;
