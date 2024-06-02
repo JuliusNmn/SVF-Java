@@ -34,7 +34,7 @@
 #include "detectJNICalls.h"
 #include "CustomAndersen.h"
 #include <iostream>
-#include "svf-ex.h"
+#include "main.h"
 
 
 using namespace llvm;
@@ -79,17 +79,6 @@ int main(int argc, char **argv) {
     /// Print points-to information
     /// printPts(ander, value1);
 
-    for (auto &function: svfModule->getFunctionSet()) {
-
-        NodeID returnNode = pag->getReturnNode(function);
-        auto pts = ander->getPts(returnNode);
-        cout << "return value pts of function " << function->toString() << endl << " size: " << pts.count() << endl;
-        for (const auto &nodeId: pts) {
-            auto node = pag->getGNode(nodeId);
-            cout << node->toString() << endl;
-        }
-
-    }
 
     /// Call Graph
     // PTACallGraph *callgraph = ander->getPTACallGraph();
@@ -135,13 +124,14 @@ int main(int argc, char **argv) {
     auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn");
 
     set<long> callbasePTS;
+    callbasePTS.insert(666);
 
 
     for (auto function : svfModule->getFunctionSet()){
+        break;
         //auto function = svfModule->getSVFFunction("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform");
         //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_unidirectional_NativeIdentityFunction_identity");
         //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_interprocedural_unidirectional_CAccessJava_ReadJavaFieldFromNative_getMyfield");
-        //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_interprocedural_interleaved_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNative");
 
         if (function->getName().find("Java_") == 0) {
             cout << function->getName() << endl;
@@ -156,17 +146,25 @@ int main(int argc, char **argv) {
 
             cout << pts->size() << endl;
         }
-        callbasePTS.insert(666);
      }
-    if (func) {
-        vector<set<long>> argumentsPTS1;
+    //auto f1 = svfModule->getSVFFunction("llvm_controlflow_interprocedural_interleaved_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNative");
+    auto f1 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_interprocedural_interleaved_RegisterCallback_registerCallbacksAndCall");
+    //auto f1 = svfModule->getSVFFunction("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform");
+    cout << f1->toString() << endl;
+    vector<set<long>> argumentsPTS1;
+    for (int i = 0; i < f1->arg_size() - 2; i++) {
         set<long> arg1PTS1;
-        arg1PTS1.insert(909);
+        //arg1PTS1.insert(1000 + i);
         argumentsPTS1.push_back(arg1PTS1);
-        auto pts = e->processNativeFunction(func, callbasePTS, argumentsPTS1);
-
-        cout << pts->size() << endl;
     }
+
+    auto pts1 = e->processNativeFunction(f1, callbasePTS, argumentsPTS1);
+
+    cout << pts1->size() << endl;
+    auto f2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_intraprocedural_bidirectional_WriteNativeGlobalVariable_getNativeGlobal");
+    vector<set<long>> argumentsPTS2;
+    auto pts2 = e->processNativeFunction(f2, callbasePTS, argumentsPTS2);
+    cout << pts2->size() << endl;
 
 
     //auto func2 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CreateJavaInstanceFromNative_createInstanceAndCallMyFunctionFromNative");
@@ -182,6 +180,7 @@ int main(int argc, char **argv) {
         auto pts2 = e->processNativeFunction(func2, callbasePTS, argumentsPTS2);
 
         cout << pts2->size() << endl;
+
     }
 
     //auto nativeIdentity = svfModule->getSVFFunction("nativeIdentityFunction");

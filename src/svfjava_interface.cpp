@@ -11,7 +11,7 @@
 #include "Util/Options.h"
 #include "detectJNICalls.h"
 #include "CustomAndersen.h"
-#include "svf-ex.h"
+#include "main.h"
 #include <iostream>
 
 using namespace llvm;
@@ -59,10 +59,10 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     const char* functionNameStr = env->GetStringUTFChars(functionName, NULL);
     const SVFFunction* function = module->getSVFFunction(functionNameStr);
     if (function) {
-        outs() << " processFunction called:  " << function->toString() << ENDL;
+        cout << " processFunction called:  " << function->toString() << ENDL;
 
     } else {
-        outs() << "function not found: " << functionNameStr << ENDL;
+        cout << "function not found: " << functionNameStr << ENDL;
         return nullptr;
     }
 
@@ -76,8 +76,8 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     ExtendedPAG* e = static_cast<ExtendedPAG *>((void*)env->GetLongField(svfModule, ExtendedPAGField));
     assert(e);
 
-    //outs() << "svfg: " << (long)svfg << ENDL;
-    outs() << "extended svfg: " << (long)e << ENDL;
+    //cout << "svfg: " << (long)svfg << ENDL;
+    cout << "extended svfg: " << (long)e << ENDL;
 
 
     jclass listenerClass = env->GetObjectClass(listenerArg);
@@ -96,7 +96,7 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     jobject listener = listenerArg;
 
     CB_SetArgGetReturnPTS cb1 = [env, listener, listenerCallback1](set<long>* callBasePTS,const char * className,const char * methodName, const char* methodSignature,vector<set<long>*> argumentsPTS) {
-        outs() << "calling java svf listener. detected method call to " << methodName << " signature " << methodSignature << ENDL;
+        cout << "calling java svf listener. detected method call to " << methodName << " signature " << methodSignature << ENDL;
         // Convert char* to Java strings
         jstring jMethodName = env->NewStringUTF(methodName);
         jstring jMethodSignature = env->NewStringUTF(methodSignature);
@@ -146,14 +146,14 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     CB_GenerateNativeAllocSiteId  cb2 = [env, listener, listenerCallback2](const char* className, const char* context) {
         jstring jClassName = env->NewStringUTF(className);
         jstring jContext = env->NewStringUTF(context);
-        outs() << "getting new instanceid from java for " << className << ENDL;
+        cout << "getting new instanceid from java for " << className << ENDL;
         jlong newInstanceId = env->CallLongMethod(listener, listenerCallback2, jClassName, jContext);
         env->DeleteLocalRef(jClassName);
         env->DeleteLocalRef(jContext);
         return newInstanceId;
     };
     CB_GetFieldPTS cb3 = [env, listener, listenerCallback3](set<long>* basePTS, const char * className, const char * fieldName) {
-        outs() << "GetField " << fieldName << ENDL;
+        cout << "GetField " << fieldName << ENDL;
         // Convert char* to Java strings
         jstring jClassName = nullptr;
         if (className) {
@@ -164,15 +164,15 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
         jlongArray basePTSArray = env->NewLongArray(basePTS->size());
         jlong* basePTSArrayElements = env->GetLongArrayElements(basePTSArray, nullptr);
         int i = 0;
-        outs() << "GetField base pts ";
+        cout << "GetField base pts ";
 
         for (long value : *basePTS) {
             basePTSArrayElements[i++] = value;
-            outs() << value << " ";
+            cout << value << " ";
         }
-        outs() << ENDL;
+        cout << ENDL;
         env->ReleaseLongArrayElements(basePTSArray, basePTSArrayElements, 0);
-        outs() << "requesting pts for field " << ENDL;
+        cout << "requesting pts for field " << ENDL;
         // Call the Java method
         jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback3, basePTSArray, jClassName, jFieldName);
         // Convert the returned long array to a C++ set
@@ -181,13 +181,13 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
         if (resultArray != nullptr) {
 
             jsize length = env->GetArrayLength(resultArray);
-            outs() << "returned pts size " << length << " elements: ";
+            cout << "returned pts size " << length << " elements: ";
             jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
             for (int i = 0; i < length; ++i) {
                 result->insert(resultElements[i]);
-                outs() << resultElements[i];
+                cout << resultElements[i];
             }
-            outs() << ENDL;
+            cout << ENDL;
             env->ReleaseLongArrayElements(resultArray, resultElements, 0);
         }
         // Release local references
@@ -196,7 +196,7 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
         return result;
     };
     CB_SetFieldPTS cb4 = [env, listener, listenerCallback4] (set<long>* basePTS, const char * className, const char * fieldName, set<long>* argPTS) {
-        outs() << "SetField " << className << " " << fieldName << ENDL;
+        cout << "SetField " << className << " " << fieldName << ENDL;
         // Convert char* to Java strings
         jstring jClassName = nullptr;
         if (className) {
@@ -229,20 +229,20 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
         env->DeleteLocalRef(argumentArray);
     };
     CB_GetArrayElementPTS cb5 = [env, listener, listenerCallback5] (set<long>* arrayPTS) {
-        outs() << "GetArrayElement " << arrayPTS << ENDL;
+        cout << "GetArrayElement " << arrayPTS << ENDL;
 
         jlongArray basePTSArray = env->NewLongArray(arrayPTS->size());
         jlong* basePTSArrayElements = env->GetLongArrayElements(basePTSArray, nullptr);
         int i = 0;
-        outs() << "GetField base pts ";
+        cout << "GetField base pts ";
 
         for (long value : *arrayPTS) {
             basePTSArrayElements[i++] = value;
-            outs() << value << " ";
+            cout << value << " ";
         }
-        outs() << ENDL;
+        cout << ENDL;
         env->ReleaseLongArrayElements(basePTSArray, basePTSArrayElements, 0);
-        outs() << "requesting pts for field " << ENDL;
+        cout << "requesting pts for field " << ENDL;
         // Call the Java method
         jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback5, basePTSArray);
         // Convert the returned long array to a C++ set
@@ -251,13 +251,13 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
         if (resultArray != nullptr) {
 
             jsize length = env->GetArrayLength(resultArray);
-            outs() << "returned pts size " << length << " elements: ";
+            cout << "returned pts size " << length << " elements: ";
             jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
             for (int i = 0; i < length; ++i) {
                 result->insert(resultElements[i]);
-                outs() << resultElements[i];
+                cout << resultElements[i];
             }
-            outs() << ENDL;
+            cout << ENDL;
             env->ReleaseLongArrayElements(resultArray, resultElements, 0);
         }
 
@@ -277,11 +277,11 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     vector<set<long>> argsPTSsVector;
     // Get array length
     jsize argsCount = env->GetArrayLength(argsPTSs);
-    outs() << "passed arg count: " << argsCount << ENDL;
-    outs() << "svffunction arg count: " << function->arg_size() << ENDL;
+    cout << "passed arg count: " << argsCount << ENDL;
+    cout << "svffunction arg count: " << function->arg_size() << ENDL;
     // Iterate over args
     for (int i = 0; i < argsCount; ++i) {
-        outs() << i << ENDL;
+        cout << i << ENDL;
         // Get the arg PTS (which is a jlongArray)
         jlongArray rowArray = (jlongArray) env->GetObjectArrayElement(argsPTSs, i);
         set<long> rowSet = jlongArrayToSet(env, rowArray);
@@ -295,18 +295,18 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     // dot -Grankdir=LR -Tpdf svfg.dot -o svfg.pdf
     // dot -Grankdir=LR -Tpdf svfg2.dot -o svfg2.pdf
     std::vector<jobject> argsV;
-    outs() << "process function" << ENDL;
+    cout << "process function" << ENDL;
     set<long>* returnPTS = e->processNativeFunction(function, basePTSSet, argsPTSsVector);
     jlongArray returnPTSArray = env->NewLongArray(returnPTS->size());
     jlong* returnPTSArrayElements = env->GetLongArrayElements(returnPTSArray, nullptr);
     int i = 0;
-    outs() << "reporting return PTS for function " << function->getName() << ENDL;
-    outs() << "PTS size: " << returnPTS->size() << " elements: ";
+    cout << "reporting return PTS for function " << function->getName() << ENDL;
+    cout << "PTS size: " << returnPTS->size() << " elements: ";
     for (long value : *returnPTS) {
         returnPTSArrayElements[i++] = value;
-        outs() << value;
+        cout << value;
     }
-    outs() << ENDL;
+    cout << ENDL;
     delete returnPTS;
     env->ReleaseLongArrayElements(returnPTSArray, returnPTSArrayElements, 0);
     return returnPTSArray;
@@ -318,8 +318,8 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
  * Signature: (Ljava/lang/String;Lsvfjava/SVFAnalysisListener;)Lsvfjava/SVFModule;
  */
 JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jclass cls, jstring moduleName) {
-    outs() << "SVF-Java built at " << __DATE__ << " " << __TIME__ << ENDL;
-    outs() << "LLVM Version: " << LLVM_VERSION_STRING << ENDL;
+    cout << "SVF-Java built at " << __DATE__ << " " << __TIME__ << ENDL;
+    cout << "LLVM Version: " << LLVM_VERSION_STRING << ENDL;
     static map<string, ExtendedPAG*> cachedModules;
 
     const char *moduleNameStr = env->GetStringUTFChars(moduleName, NULL);
@@ -338,7 +338,7 @@ JNIEXPORT jobject JNICALL Java_svfjava_SVFModule_createSVFModule(JNIEnv *env, jc
 
     } else {
         svfModule = ex->module;
-        outs() << "using cached module " << moduleNameStr << ENDL;
+        cout << "using cached module " << moduleNameStr << ENDL;
     }
     assert(ex);
     assert(svfModule);

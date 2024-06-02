@@ -27,11 +27,12 @@ add_executable(svf-ex ${SOURCES}
         CustomAndersen.cpp
         CustomAndersen.h
         svfjava_interface.cpp
-        svf-ex.h
+        main.h
         detector2.cpp
         connector.cpp
-        translator.cpp
+        extendlattice.cpp
         solver.cpp
+        analysis.cpp
 )
 target_compile_options(svf-ex PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-g>

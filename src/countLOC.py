@@ -2,20 +2,24 @@ import subprocess
 
 # Define the dictionary with sets of filenames
 files_to_sum = {
-    "connector": ["SVFModule.java", "SVFJava.java", "CppReference.java", "SVFAnalysisListener.java", "connector.cpp","svfjava_interface.cpp"],
-    "analysis": ["svf-ex.cpp"],
-    "lattice": ["CustomAndersen.cpp"],
-    "translator": ["translator.cpp"],
-    "detector":["detectJNICalls.cpp",  "detector2.cpp", ],
+    "connector": ["SVFModule.java", "SVFJava.java", "CppReference.java", "SVFAnalysisListener.java", "connector.cpp","svfjava_interface.cpp", "NativeAnalysis.scala", "SVFConnector.scala"],
+    "analysis": ["analysis.cpp"],
+    "lattice": ["CustomAndersen.cpp", "extendlattice.cpp"],
+    "detector":["detectJNICalls.cpp",  "detector2.cpp"],
     "solver":["solver.cpp"],
     #"test":["countLOC.py", ],
 }
 import re
+import sys
+if len(sys.argv) == 1:
+    print("usage: " + sys.argv[0] + " dir1 dir2 ...")
+paths = sys.argv[1:]
 
-# Step 1: Run the `tokei` command
-command = ["tokei", "/home/julius/SVF-Java/src/", "-f"]
-result = subprocess.run(command, capture_output=True, text=True)
-output = result.stdout
+output = ""
+for p in paths:
+    command = ["tokei", p, "-f"]
+    result = subprocess.run(command, capture_output=True, text=True)
+    output += result.stdout + "\n"
 print(output)
 # Step 2: Parse the output to extract LOC for each file
 file_locs = {}

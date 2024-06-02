@@ -2,14 +2,14 @@
 // Created by julius on 5/15/24.
 //
 
-#ifndef SVF_JAVA_SVF_EX_H
-#define SVF_JAVA_SVF_EX_H
+#ifndef SVF_JAVA_MAIN_H
+#define SVF_JAVA_MAIN_H
 
 #include "WPA/Andersen.h"
 #include "SVF-LLVM/SVFIRBuilder.h"
 #include "Util/Options.h"
 #include "detectJNICalls.h"
-#include "CustomAndersen.h"
+
 #include <iostream>
 #define ENDL "\n"
 // this callback is called for all JNI method invocations.
@@ -57,19 +57,19 @@ private:
 
     std::set<NodeID> registeredJavaAllocSites;
 
-    CustomAndersen* customAndersen;
+    CustomAndersen* customAndersen = nullptr;
     bool refreshAndersen = true;
     void updateAndersen();
     void addPTS(NodeID node, std::set<long> customNodes);
     long getTotalSizeOfAdditionalPTS();
 
-    std::set<long>* getReturnPTSForJNICallsite(const llvm::CallBase* callsite) ;
-    std::set<long>* getPTSForField(const llvm::CallBase* callsite) ;
-    void reportSetField(const llvm::CallBase* callsite) ;
+    std::set<long>* getReturnPTSForJNICallsite(const llvm::CallBase* callsite, DominatorTree* tree) ;
+    std::set<long>* getPTSForField(const llvm::CallBase* callsite, DominatorTree* tree) ;
+    void reportSetField(const llvm::CallBase* callsite, DominatorTree* tree) ;
     std::set<long>* getPTSForArray(const llvm::CallBase* callsite);
-    const SVFCallInst* retrieveGetFieldID(const llvm::CallBase* getOrSetField);
-    const char* getClassName(const SVFValue* paramClass);
-    void handleJNIAllocSite(const llvm::CallBase* inst);
+    const SVFCallInst* retrieveGetFieldID(const llvm::CallBase* getOrSetField, DominatorTree* tree);
+    const char* getClassName(const SVFValue* paramClass, const llvm::CallBase* user, DominatorTree* tree);
+    void handleJNIAllocSite(const llvm::CallBase* inst, DominatorTree* tree);
     void solve(const SVFFunction* function);
     NodeID createOrAddDummyNode(long customId);
 
@@ -102,6 +102,19 @@ public:
     SVFModule* module;
 };
 
+// this custom implementation adds additional points-to-sets to a PAG before Andersen is performed.
+class CustomAndersen : public SVF::AndersenWaveDiff {
+    // extend initial PTS of nodes before Andersen is computed.
+    // nodes in PTS must exist in PAG, use addDummyNode to add them.
+    // note that this persistently modifies pag, so keep track of added NodeIDs in outside instance.
+    std::map<NodeID, std::set<NodeID>*>* additionalPTS;
+public:
+    CustomAndersen(SVFIR* _pag, std::map<NodeID, std::set<NodeID>*>* additionalPTS, PTATY type = AndersenWaveDiff_WPA, bool alias_check = true): AndersenWaveDiff(_pag, type, alias_check), additionalPTS(additionalPTS) {}
+    virtual void initialize() override;
+    void updatePTS(std::map<NodeID, std::set<NodeID>*>* additionalPTS);
+};
 
 
-#endif //SVF_JAVA_SVF_EX_H
+
+
+#endif //SVF_JAVA_MAIN_H

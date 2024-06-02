@@ -1,7 +1,8 @@
 //
 // Created by julius on 5/31/24.
 //
-#include "svf-ex.cpp"
+#include "main.h"
+using namespace std;
 void ExtendedPAG::solve(const SVFFunction* function) {
     long lastPTSSize = getTotalSizeOfAdditionalPTS();
 
