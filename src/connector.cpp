@@ -63,7 +63,6 @@ set<long>* ExtendedPAG::processNativeFunction(const SVFFunction* function, set<l
 
     NodeID retNode = pag->getReturnNode(function);
     set<long>* javaPTS = getPTS(retNode);
-    customAndersen->getPTACallGraph()->dump("cg");
 
     return javaPTS;
 }

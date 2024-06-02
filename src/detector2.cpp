@@ -158,6 +158,7 @@ void ExtendedPAG::runDetector(const SVFFunction* function, set<const SVFFunction
     const JNICallOffset offset_GetObjectField = (unsigned long) (&j.GetObjectField) - (unsigned long) (&j);
     const JNICallOffset offset_SetObjectField = (unsigned long) (&j.SetObjectField) - (unsigned long) (&j);
     const JNICallOffset offset_GetObjectArrayElement = (unsigned long) (&j.GetObjectArrayElement) - (unsigned long) (&j);
+    const JNICallOffset offset_NewGlobalRef = (unsigned long) (&j.NewGlobalRef) - (unsigned long) (&j);
     const JNICallOffset offset_SetObjectArrayElement = (unsigned long) (&j.SetObjectArrayElement) - (unsigned long) (&j);
     const JNICallOffset offset_NewObject = (unsigned long) (&j.NewObject) - (unsigned long) (&j);
     const JNICallOffset offset_AllocObject = (unsigned long) (&j.AllocObject) - (unsigned long) (&j);
@@ -194,6 +195,32 @@ void ExtendedPAG::runDetector(const SVFFunction* function, set<const SVFFunction
                 set<NodeID> *s = new set<NodeID>();
                 s->insert(dummyNode);
                 additionalPTS[callsiteNode] = s;
+            } else if (offset == offset_NewGlobalRef) {
+                auto inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(item.first);
+                const SVFCallInst* call = SVFUtil::dyn_cast<SVFCallInst>(inst);
+                const SVFValue* obj = call->getArgOperand(1);
+                cout << obj->toString()<<endl;
+                auto baseNode = pag->getValueNode(obj);
+
+                if (const SVFInstruction*  loadInst = SVFUtil::dyn_cast<SVFInstruction>(obj)) {
+                    cout << loadInst->toString() << endl;
+                    const Value* v = LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(obj);
+                    if (auto l = llvm::dyn_cast<LoadInst>(v)) {
+                        auto pointer = l->getPointerOperand();
+                        auto svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(pointer);
+                        //baseNode = pag->getValueNode(svfVal);
+                    }
+
+                }
+                NodeID callsiteNode = pag->getValueNode(inst);
+
+                if (auto e = additionalPTS[callsiteNode]){
+                    e->insert(baseNode);
+                } else {
+                    set<NodeID>* newset = new set<NodeID>();
+                    newset->insert(baseNode);
+                    additionalPTS[callsiteNode] = newset;
+                }
             }
         }
     }
