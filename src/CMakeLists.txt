@@ -24,8 +24,6 @@ include_directories(${JNI_INCLUDE_DIRS})
 add_executable(svf-ex ${SOURCES}
         detectJNICalls.cpp
         detectJNICalls.h
-        CustomAndersen.cpp
-        CustomAndersen.h
         svfjava_interface.cpp
         main.h
         detector2.cpp
@@ -33,6 +31,7 @@ add_executable(svf-ex ${SOURCES}
         extendlattice.cpp
         solver.cpp
         analysis.cpp
+        extendlattice.cpp
 )
 target_compile_options(svf-ex PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-g>

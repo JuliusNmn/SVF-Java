@@ -23,8 +23,19 @@ typedef std::function<std::set<long>*(std::set<long>* callBasePTS, const char * 
 typedef std::function<void(std::set<long>* callBasePTS, const char * className, const char * fieldName, std::set<long>* argPTS)> CB_SetFieldPTS;
 // called at GetObjectArrayElement etc. invoke site
 typedef std::function<std::set<long>*(std::set<long>* arrayPTS)> CB_GetArrayElementPTS;
+using namespace SVF;
 
-
+// this custom implementation adds additional points-to-sets to a PAG before Andersen is performed.
+class CustomAndersen : public SVF::AndersenWaveDiff {
+    // extend initial PTS of nodes before Andersen is computed.
+    // nodes in PTS must exist in PAG, use addDummyNode to add them.
+    // note that this persistently modifies pag, so keep track of added NodeIDs in outside instance.
+    std::map<NodeID, std::set<NodeID>*>* additionalPTS;
+public:
+    CustomAndersen(SVFIR* _pag, std::map<NodeID, std::set<NodeID>*>* additionalPTS, PTATY type = AndersenWaveDiff_WPA, bool alias_check = true): AndersenWaveDiff(_pag, type, alias_check), additionalPTS(additionalPTS) {}
+    virtual void initialize() override;
+    void updatePTS(std::map<NodeID, std::set<NodeID>*>* additionalPTS);
+};
 // this class extends the PAG with special dummy alloc nodes
 // dummy nodes can be added to the initial points to sets of other nodes (such as native function arguments & return values)
 // Andersen's analysis is performed on demand if initial PTS are changed, new nodes will be propagated.
@@ -102,17 +113,6 @@ public:
     SVFModule* module;
 };
 
-// this custom implementation adds additional points-to-sets to a PAG before Andersen is performed.
-class CustomAndersen : public SVF::AndersenWaveDiff {
-    // extend initial PTS of nodes before Andersen is computed.
-    // nodes in PTS must exist in PAG, use addDummyNode to add them.
-    // note that this persistently modifies pag, so keep track of added NodeIDs in outside instance.
-    std::map<NodeID, std::set<NodeID>*>* additionalPTS;
-public:
-    CustomAndersen(SVFIR* _pag, std::map<NodeID, std::set<NodeID>*>* additionalPTS, PTATY type = AndersenWaveDiff_WPA, bool alias_check = true): AndersenWaveDiff(_pag, type, alias_check), additionalPTS(additionalPTS) {}
-    virtual void initialize() override;
-    void updatePTS(std::map<NodeID, std::set<NodeID>*>* additionalPTS);
-};
 
 
 
