@@ -4,7 +4,7 @@ import subprocess
 files_to_sum = {
     "connector": ["SVFModule.java", "SVFJava.java", "CppReference.java", "SVFAnalysisListener.java", "connector.cpp","svfjava_interface.cpp", "NativeAnalysis.scala", "SVFConnector.scala"],
     "analysis": ["analysis.cpp"],
-    "lattice": ["CustomAndersen.cpp", "extendlattice.cpp"],
+    "lattice": ["extendlattice.cpp"],
     "detector":["detectJNICalls.cpp",  "detector2.cpp"],
     "solver":["solver.cpp"],
     #"test":["countLOC.py", ],
