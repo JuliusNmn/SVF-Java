@@ -4,15 +4,18 @@
 #include "main.h"
 using namespace std;
 using namespace SVF;
-
+// from a list of callsites, return the latest possible callsite that is executed before instruciton "user"
 const CallBase * getImmediateDominator(set<const llvm::CallBase*>* candidateCalls, const llvm::CallBase* user, DominatorTree* tree){
     const llvm::CallBase* immediateDominator = nullptr;
     for (const auto &def: *candidateCalls) {
         if (immediateDominator == nullptr && tree->dominates(def, user)) {
+            // def is the first instruction from the set that dominates user
             immediateDominator = def;
         } else {
-            if (tree->dominates(immediateDominator, def) && tree->dominates(def, user)){
-                immediateDominator = def;
+            if (immediateDominator != nullptr) {
+                if (tree->dominates(immediateDominator, def) && tree->dominates(def, user)) {
+                    immediateDominator = def;
+                }
             }
         }
     }
@@ -144,6 +147,7 @@ set<long>* ExtendedPAG::getPTSForField(const llvm::CallBase* getField, Dominator
         const char* className = getClassName(paramClass, getField, tree);
         return callback_GetFieldPTS(basePTS, className, fieldName);
     } else {
+        cout << inst->toString() << endl;
         cout << "failed to get field name for " << inst->toString() << endl;
     }
 

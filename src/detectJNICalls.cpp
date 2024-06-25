@@ -81,10 +81,42 @@ const CallBase* getDefiningCallsite(AllocaInst* pointer, const Instruction* usag
 void DetectNICalls::processFunction(const llvm::Function &F) {
     JNINativeInterface_ j{};
     const Module* module = F.getParent();
+
+    static std::map<std::string, JNICallOffset>* wrapper_function_names = nullptr;
+    if (!wrapper_function_names){
+        wrapper_function_names = new std::map<std::string, JNICallOffset>;
+        (*wrapper_function_names)["_ZN7JNIEnv_9FindClassEPKc"] = (unsigned long) (&j.FindClass) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_11GetMethodIDEP7_jclassPKcS3_"] = (unsigned long) (&j.GetMethodID) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_16GetStaticFieldIDEP7_jclassPKcS3_"] = (unsigned long) (&j.GetStaticFieldID) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_20GetStaticObjectFieldEP7_jclassP9_jfieldID"] = (unsigned long) (&j.GetStaticObjectField) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_16CallObjectMethodEP8_jobjectP10_jmethodIDz"] = (unsigned long) (&j.CallObjectMethod) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_9NewObjectEP7_jclassP10_jmethodIDz"] = (unsigned long) (&j.NewObject) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_10GetFieldIDEP7_jclassPKcS3_"] = (unsigned long) (&j.GetFieldID) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_14SetObjectFieldEP8_jobjectP9_jfieldIDS1_"] = (unsigned long) (&j.SetObjectField) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_11SetIntFieldEP8_jobjectP9_jfieldIDi"] = (unsigned long) (&j.SetIntField) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_14GetObjectClassEP8_jobject"] = (unsigned long) (&j.GetObjectClass) - (unsigned long) (&j);
+        (*wrapper_function_names)["_ZN7JNIEnv_14GetObjectFieldEP8_jobjectP9_jfieldID"] = (unsigned long) (&j.GetObjectField) - (unsigned long) (&j);
+
+    }
+    // don't add callsites inside wrapper functions
+    if ((*wrapper_function_names)[F.getName().str()])
+        return;
     for (const BasicBlock &B : F) {
         for (const Instruction &I: B) {
             if (auto *cb = dyn_cast<CallBase>(&I)) {
                 JNICallOffset offset;
+                if (auto callee = cb->getCalledFunction()){
+                    auto name = cb->getCalledFunction()->getName().str();
+                    if (name.find("_ZN7JNIEnv") == 0){
+                        if (auto offset = (*wrapper_function_names)[name]){
+                            detectedJNICalls[cb] = offset;
+                        } else {
+                            std::cout << "unknown JNI function " << name << std::endl;
+                        }
+                    }
+
+                }
+
                 if (isJNIEnvOffsetCall(module, cb, offset)) {
                     detectedJNICalls[cb] = offset;
                 }
