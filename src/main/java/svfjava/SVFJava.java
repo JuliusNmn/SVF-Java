@@ -68,8 +68,8 @@ public class SVFJava {
                     // return PTS for call base as return val of function.
                     //return basePTS;
                     long as = counter++;
-                    System.out.println("returning dummy alloc site " + as);
-                    return new long[]{as};
+                    //System.out.println("returning dummy alloc site " + as);
+                    return new long[]{};
                 }
 
                 public long jniNewObject(String className, String context) {
@@ -81,8 +81,8 @@ public class SVFJava {
                 public long[] getField(long[] basePTS, String className, String fieldName) {
                     System.out.println("GetField " + fieldName);
                     long as = counter++;
-                    System.out.println("returning dummy alloc site " + as);
-                    return new long[]{as};
+                    //System.out.println("returning dummy alloc site " + as);
+                    return new long[]{};
                 }
 
                 // called at SetObjectField etc, invoke site
@@ -127,7 +127,7 @@ public class SVFJava {
         System.out.println("Loaded module.");
         for (String f : module1.getFunctions()) {
 
-            if (f.equals("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_unidirectional_NativeIdentityFunction_identity") && f.startsWith("Java_")) {
+            if (f.startsWith("Java_")) {
                 System.out.println(f);
                 SVFModule module2 = SVFModule.createSVFModule(moduleName);
                 int argc = module2.getFunctionArgCount(f);

@@ -127,7 +127,8 @@ int main(int argc, char **argv) {
 
 
     for (auto function : svfModule->getFunctionSet()){
-        break;
+        
+
         //auto function = svfModule->getSVFFunction("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform");
         //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_unidirectional_NativeIdentityFunction_identity");
         //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_interprocedural_unidirectional_CAccessJava_ReadJavaFieldFromNative_getMyfield");
@@ -146,6 +147,7 @@ int main(int argc, char **argv) {
             cout << pts->size() << endl;
         }
      }
+    /*
     //auto f1 = svfModule->getSVFFunction("llvm_controlflow_interprocedural_interleaved_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNative");
     auto f1 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_interprocedural_interleaved_RegisterCallback_registerCallbacksAndCall");
     //auto f1 = svfModule->getSVFFunction("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform");
@@ -180,7 +182,7 @@ int main(int argc, char **argv) {
 
         cout << pts2->size() << endl;
 
-    }
+    }*/
 
     //auto nativeIdentity = svfModule->getSVFFunction("nativeIdentityFunction");
 
