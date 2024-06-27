@@ -119,9 +119,13 @@ set<long>* ExtendedPAG::getReturnPTSForJNICallsite(const llvm::CallBase* callsit
         cout << methodSig << endl;
         if (methodName && methodSig) {
             const char* className = getClassName(paramClass, callsite, tree);
-            cout << "requesting return PTS for function " << methodName << endl;
-            auto pts = callback_ReportArgPTSGetReturnPTS(basePTS, className, methodName, methodSig, argumentsPTS);
-            returnPts->insert(pts->begin(), pts->end());
+            if (className) {
+                cout << "requesting return PTS for function " << methodName << endl;
+                auto pts = callback_ReportArgPTSGetReturnPTS(basePTS, className, methodName, methodSig, argumentsPTS);
+                returnPts->insert(pts->begin(), pts->end());
+            } else {
+                cout << "failed to get class name" << endl;
+            }
         }
     }
     return returnPts;
@@ -186,8 +190,13 @@ void ExtendedPAG::reportSetField(const llvm::CallBase* setField, DominatorTree* 
 
         const char* fieldName = getStringParameterInitializer(llvmParamFieldName);
         const char* className = getClassName(paramClass, setField, tree);
-        cout << "adding setting PTS for field " << fieldName << endl;
-        callback_SetFieldPTS(basePTS, className, fieldName, argPTS);
+        if (className){
+            cout << "adding setting PTS for field " << fieldName << endl;
+            callback_SetFieldPTS(basePTS, className, fieldName, argPTS);
+        } else {
+            cout << "failed to get className " << endl;
+            callback_SetFieldPTS(basePTS, className, nullptr, argPTS);
+        }
     }
 }
 
