@@ -186,7 +186,7 @@ void ExtendedPAG::reportSetField(const llvm::CallBase* setField, DominatorTree* 
 
         const char* fieldName = getStringParameterInitializer(llvmParamFieldName);
         const char* className = getClassName(paramClass, setField, tree);
-        cout << "requesting return PTS for field " << fieldName << endl;
+        cout << "adding setting PTS for field " << fieldName << endl;
         callback_SetFieldPTS(basePTS, className, fieldName, argPTS);
     }
 }
