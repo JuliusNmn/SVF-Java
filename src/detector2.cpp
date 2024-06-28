@@ -195,7 +195,7 @@ void ExtendedPAG::reportSetField(const llvm::CallBase* setField, DominatorTree* 
             callback_SetFieldPTS(basePTS, className, fieldName, argPTS);
         } else {
             cout << "failed to get className " << endl;
-            callback_SetFieldPTS(basePTS, className, nullptr, argPTS);
+            callback_SetFieldPTS(basePTS, className, fieldName, argPTS);
         }
     }
 }
