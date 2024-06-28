@@ -152,7 +152,7 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
         return newInstanceId;
     };
     CB_GetFieldPTS cb3 = [env, listener, listenerCallback3](set<long>* basePTS, const char * className, const char * fieldName) {
-        cout << "GetField " << fieldName << ENDL;
+        //cout << "GetField " << fieldName << ENDL;
         // Convert char* to Java strings
         jstring jClassName = nullptr;
         if (className) {
@@ -195,7 +195,7 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
         return result;
     };
     CB_SetFieldPTS cb4 = [env, listener, listenerCallback4] (set<long>* basePTS, const char * className, const char * fieldName, set<long>* argPTS) {
-        cout << "SetField " << className << " " << fieldName << ENDL;
+        //cout << "SetField " << className << " " << fieldName << ENDL;
         // Convert char* to Java strings
         jstring jClassName = nullptr;
         if (className) {
