@@ -212,15 +212,17 @@ void ExtendedPAG::runDetector(const SVFFunction* function, set<const SVFFunction
     const JNICallOffset offset_AllocObject = (unsigned long) (&j.AllocObject) - (unsigned long) (&j);
 
     auto name =  function->getName();
-    if (name == "JNICustomFilter"){
-        cout << "process " << name << endl;
-    }
+
     llvm::Function* f_llvm = const_cast<Function *>(llvm::dyn_cast<llvm::Function>(
             LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(function)));
-    llvm::DominatorTree* domTree = new llvm::DominatorTree(*f_llvm);
+
+    llvm::DominatorTree* domTree = nullptr;
     for (const auto &item: detectedJniCalls->detectedJNICalls) {
         JNICallOffset offset = item.second;
         if (item.first->getFunction() == f_llvm) {
+            if (domTree == nullptr){
+                domTree = new llvm::DominatorTree(*f_llvm);
+            }
             auto inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(item.first);
             if (offset == offset_CallObjectMethod || offset == offset_CallVoidMethod) {
                 auto retPTS = getReturnPTSForJNICallsite(item.first, domTree);
