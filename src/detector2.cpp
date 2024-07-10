@@ -120,13 +120,11 @@ set<long>* ExtendedPAG::getReturnPTSForJNICallsite(const llvm::CallBase* callsit
         cout << methodSig << endl;
         if (methodName && methodSig) {
             const char* className = getClassName(paramClass, callsite, tree);
-            if (className) {
-                cout << "requesting return PTS for function " << methodName << endl;
-                auto pts = callback_ReportArgPTSGetReturnPTS(basePTS, className, methodName, methodSig, argumentsPTS);
-                returnPts->insert(pts->begin(), pts->end());
-            } else {
-                cout << "failed to get class name" << endl;
-            }
+
+            cout << "requesting return PTS for function " << methodName << endl;
+            auto pts = callback_ReportArgPTSGetReturnPTS(basePTS, className, methodName, methodSig, argumentsPTS);
+            returnPts->insert(pts->begin(), pts->end());
+
         }
     }
     return returnPts;
