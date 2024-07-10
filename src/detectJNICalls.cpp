@@ -47,7 +47,14 @@ bool isJNIEnvOffsetCall(const Module* module, const CallBase* cb, JNICallOffset&
     LoadInst* loadFunctionAddressInst = dyn_cast<LoadInst>(calledOperand);
     if (!loadFunctionAddressInst) return false;
     GetElementPtrInst* offsetBase = dyn_cast<GetElementPtrInst>(loadFunctionAddressInst->getPointerOperand());
-    if (!offsetBase) return false;
+    if (!offsetBase) {
+        BitCastInst* bitcast = dyn_cast<BitCastInst>(loadFunctionAddressInst->getPointerOperand());
+        if (!bitcast) return false;
+
+        offsetBase = dyn_cast<GetElementPtrInst>(bitcast->getOperand(0));
+        if (!offsetBase) return false;
+
+    }
     offset = getOffset(module, offsetBase);
     //errs() << *calledOperand << "\n";
     //errs() << *offsetBase << "\n";
