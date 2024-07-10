@@ -228,6 +228,9 @@ void ExtendedPAG::runDetector(const SVFFunction* function, set<const SVFFunction
             if (offset == offset_CallObjectMethod || offset == offset_CallVoidMethod) {
                 auto retPTS = getReturnPTSForJNICallsite(item.first, domTree);
                 NodeID callsiteNode = pag->getValueNode(inst);
+                for (const auto &allocsite: *retPTS) {
+                    assert(allocsite != 0);
+                }
                 addPTS(callsiteNode, *retPTS);
             } else if (offset == offset_NewObject || offset == offset_AllocObject) {
                 handleJNIAllocSite(item.first, domTree);
