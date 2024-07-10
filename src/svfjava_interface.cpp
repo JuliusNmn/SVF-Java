@@ -37,6 +37,7 @@ std::set<long> jlongArrayToSet(JNIEnv *env, jlongArray arr) {
     // Add elements to the set
     for (int i = 0; i < len; ++i) {
         resultSet.insert(elements[i]);
+        assert(elements[i] != 0);
     }
 
     // Release array elements

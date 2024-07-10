@@ -125,24 +125,34 @@ public class SVFJava {
         System.out.println("Loading Module " + moduleName);
         SVFModule module1 = SVFModule.createSVFModule(moduleName);
         System.out.println("Loaded module.");
+
         for (String f : module1.getFunctions()) {
 
             if (f.startsWith("Java_")) {
                 System.out.println(f);
-                SVFModule module2 = SVFModule.createSVFModule(moduleName);
-                int argc = module2.getFunctionArgCount(f);
-                //System.out.println(module2.getNativeAllocSites().size());
-                long[][] argsPTS = new long[argc-2][];
-                for (int i = 0; i < argc - 2; i++){
-                    argsPTS[i] = new long[]{1000L + i};
-                    long[] a = argsPTS[i];
-                    System.out.println(a[0]);
-                }
-
-                long[] resultPTS = module2.processFunction(f, new long[]{666}, argsPTS, new DummyListener());
-                System.out.println("got pts! " + resultPTS.length);
-                for (long i : resultPTS){
-                    System.out.println(i);
+                for (int j = 0; j < 2; j++) {
+                    int p = 1000;
+                    SVFModule module2 = SVFModule.createSVFModule(moduleName);
+                    int argc = module2.getFunctionArgCount(f);
+                    //System.out.println(module2.getNativeAllocSites().size());
+                    long[][] argsPTSs = new long[argc-2][];
+                    for (int i = 0; i < argc - 2; i++){
+                        argsPTSs[i] = new long[j];
+                        for (int x = 0; x < j; x++){
+                            argsPTSs[i][x] = p++;
+                        }
+                        long[] a = argsPTSs[i];
+                        //System.out.println(a[0]);
+                    }
+                    long[] basePTS = new long[j];
+                    for (int x = 0; x < j; x++){
+                        basePTS[x] = p++;
+                    }
+                    long[] resultPTS = module2.processFunction(f, basePTS, argsPTSs, new DummyListener());
+                    System.out.println("got pts! " + resultPTS.length);
+                    for (long i : resultPTS){
+                        System.out.println(i);
+                    }
                 }
             }
         }
