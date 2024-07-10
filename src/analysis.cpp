@@ -22,7 +22,7 @@ set<long>* ExtendedPAG::processNativeFunction(const SVFFunction* function, set<l
         cout << "native function arg count (" << args.size() << ") != size of arguments PTS (" << argumentsPTS.size() << ") + 2 " << endl;
         assert(args.size() == argumentsPTS.size() + 2 && "invalid arg count");
     }
-    for (const auto &allocsite: *callBasePTS) {
+    for (const auto &allocsite: callBasePTS) {
         assert(allocsite != 0);
     }
     addPTS(baseNode, callBasePTS);
