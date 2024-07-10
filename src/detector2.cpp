@@ -26,12 +26,12 @@ const char* ExtendedPAG::getClassName(const SVFValue* paramClass, const llvm::Ca
     JNINativeInterface_ j{};
     const JNICallOffset offset_FindClass = (unsigned long) (&j.FindClass) - (unsigned long) (&j);
     set<const llvm::CallBase*> candidates;
-    for (const auto &item: customAndersen->getPts(pag->getValueNode(paramClass))) {
+    auto node = pag->getValueNode(paramClass);
+    for (const auto &item: customAndersen->getPts(node)) {
         if (auto GetMethodId = jniCallsiteDummyNodes[item]) {
             if (GetMethodId->second == offset_FindClass) {
-                const llvm::CallBase* getFieldCall = llvm::dyn_cast<llvm::CallBase>(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(GetMethodId->first));
-                candidates.insert(getFieldCall);
-
+                const llvm::CallBase* findClassCall = llvm::dyn_cast<llvm::CallBase>(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(GetMethodId->first));
+                candidates.insert(findClassCall);
             }
         }
     }
@@ -46,6 +46,7 @@ const char* ExtendedPAG::getClassName(const SVFValue* paramClass, const llvm::Ca
     }
     return nullptr;
 }
+
 const SVFCallInst* ExtendedPAG::retrieveGetFieldID(const llvm::CallBase* getOrSetField, DominatorTree* tree){
     JNINativeInterface_ j{};
     const JNICallOffset offset_GetFieldID = (unsigned long) (&j.GetFieldID) - (unsigned long) (&j);
