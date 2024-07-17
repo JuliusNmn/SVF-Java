@@ -239,8 +239,6 @@ std::map<unsigned long, std::string> getJNICalls() {
     allJniCalls[(unsigned long) (&j.GetDirectBufferAddress) - (unsigned long)(&j)] = "GetDirectBufferAddress";
     allJniCalls[(unsigned long) (&j.GetDirectBufferCapacity) - (unsigned long)(&j)] = "GetDirectBufferCapacity";
     allJniCalls[(unsigned long) (&j.GetObjectRefType) - (unsigned long)(&j)] = "GetObjectRefType";
-    allJniCalls[(unsigned long) (&j.GetModule) - (unsigned long)(&j)] = "GetModule";
-    allJniCalls[(unsigned long) (&j.IsVirtualThread) - (unsigned long)(&j)] = "IsVirtualThread";
 
 
     return allJniCalls;
