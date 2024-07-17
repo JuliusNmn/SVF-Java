@@ -2,6 +2,7 @@
 // Created by julius on 5/31/24.
 //
 #include "main.h"
+#include "jnicall_helper.h"
 using namespace std;
 using namespace SVF;
 
@@ -21,6 +22,13 @@ ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag): pag(pag) {
         const llvm::Function* llvmFunction = llvm::dyn_cast<llvm::Function>(LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(svfFunction));
         detectedJniCalls->processFunction(*llvmFunction);
     }
+    cout << "detected " << detectedJniCalls->detectedJNICalls.size() << " JNI calls" << endl;
+    std::ofstream myfile;
+    auto path = module->getModuleIdentifier() + "_statistics.txt";
+    myfile.open(path);
+    std::cout << path << " " << myfile.is_open() << std::endl;
+
+    auto allCalls = getJNICalls();
     for (const auto &call: detectedJniCalls->detectedJNICalls) {
         auto inst = LLVMModuleSet::getLLVMModuleSet()->getSVFInstruction(call.first);
         NodeID callsiteNode = pag->getValueNode(inst);
@@ -30,7 +38,9 @@ ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag): pag(pag) {
         set<NodeID>* s = new set<NodeID>();
         s->insert(dummyNode);
         additionalPTS[callsiteNode] = s;
+        myfile << call.second << ";" << allCalls[call.second] << ";" << cb->toString() << endl;
     }
+    myfile.close();
     updateAndersen();
 }
 
