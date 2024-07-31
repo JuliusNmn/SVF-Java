@@ -204,6 +204,7 @@ void ExtendedPAG::runDetector(const SVFFunction* function, set<const SVFFunction
     const JNICallOffset offset_CallObjectMethod = (unsigned long) (&j.CallObjectMethod) - (unsigned long) (&j);
     const JNICallOffset offset_GetObjectField = (unsigned long) (&j.GetObjectField) - (unsigned long) (&j);
     const JNICallOffset offset_SetObjectField = (unsigned long) (&j.SetObjectField) - (unsigned long) (&j);
+    const JNICallOffset offset_SetDoubleField = (unsigned long) (&j.SetDoubleField) - (unsigned long) (&j);
     const JNICallOffset offset_GetObjectArrayElement = (unsigned long) (&j.GetObjectArrayElement) - (unsigned long) (&j);
     const JNICallOffset offset_NewGlobalRef = (unsigned long) (&j.NewGlobalRef) - (unsigned long) (&j);
     const JNICallOffset offset_SetObjectArrayElement = (unsigned long) (&j.SetObjectArrayElement) - (unsigned long) (&j);
@@ -237,9 +238,8 @@ void ExtendedPAG::runDetector(const SVFFunction* function, set<const SVFFunction
                 NodeID callsiteNode = pag->getValueNode(inst);
                 cout << "adding " << fieldPTS->size() << " PTS to field " << endl;
                 addPTS(callsiteNode, *fieldPTS);
-            } else if (offset == offset_SetObjectField) {
+            } else if (offset >= offset_SetObjectField && offset <= offset_SetDoubleField) {
                 reportSetField(item.first, domTree);
-
             } else if (offset == offset_GetObjectArrayElement) {
                 getPTSForArray(item.first);
                 NodeID callsiteNode = pag->getValueNode(inst);
