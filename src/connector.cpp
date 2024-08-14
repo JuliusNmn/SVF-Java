@@ -48,7 +48,7 @@ ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag): pag(pag) {
             for (int i = 0; i < svfFunction->arg_size() - 2; i++){
                 auto arg = svfFunction->getArg(i+2);
                 NodeID dummyNode = pag->addDummyObjNode(arg->getType());
-                pagDummyNodeToJavaArgumentNode[dummyNode] = new std::pair<const char *, int>(svfFunction->getName().c_str(), i);
+                pagDummyNodeToJavaArgumentNode[dummyNode] = new std::pair<const SVFFunction*, int>(svfFunction, i);
                 NodeID argNode = pag->getValueNode(arg);
                 set<NodeID>* s = new set<NodeID>();
                 s->insert(dummyNode);

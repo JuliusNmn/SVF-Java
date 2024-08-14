@@ -97,10 +97,10 @@ set<long>* ExtendedPAG::getPTS(NodeID node) {
             javaAllocPTS->insert(id);
 
         }
-        if (std::pair<const char *, int>* funcArg = pagDummyNodeToJavaArgumentNode[allocNode]){
-            if (strcmp(funcArg->first,currentFunction->getName().c_str()) != 0){
+        if (std::pair<const SVFFunction*, int>* funcArg = pagDummyNodeToJavaArgumentNode[allocNode]){
+            if (funcArg->first != currentFunction){
                 // only request argument pts for functions other than the one currently being processed
-                set<long>* otherFunctionArgPts = callback_GetNativeFunctionArg(funcArg->first, funcArg->second);
+                set<long>* otherFunctionArgPts = callback_GetNativeFunctionArg(funcArg->first->getName().c_str(), funcArg->second);
                 javaAllocPTS->insert(otherFunctionArgPts->begin(), otherFunctionArgPts->end());
             }
         }
@@ -112,10 +112,10 @@ set<long>* ExtendedPAG::getPTS(NodeID node) {
                 auto argNode = pag->getValueNode(obj);
                 auto pts2 = customAndersen->getPts(argNode);
                 for (const NodeID allocNode2: pts2) {
-                    if (std::pair<const char *, int>* funcArg = pagDummyNodeToJavaArgumentNode[allocNode2]){
-                        if (strcmp(funcArg->first,currentFunction->getName().c_str()) != 0){
+                    if (std::pair<const SVFFunction*, int>* funcArg = pagDummyNodeToJavaArgumentNode[allocNode2]){
+                        if (funcArg->first != currentFunction){
                             // only request argument pts for functions other than the one currently being processed
-                            set<long>* otherFunctionArgPts = callback_GetNativeFunctionArg(funcArg->first, funcArg->second);
+                            set<long>* otherFunctionArgPts = callback_GetNativeFunctionArg(funcArg->first->getName().c_str(), funcArg->second);
                             javaAllocPTS->insert(otherFunctionArgPts->begin(), otherFunctionArgPts->end());
                         }
                     }

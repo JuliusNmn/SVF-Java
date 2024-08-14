@@ -112,6 +112,11 @@ int main(int argc, char **argv) {
         cout << "GetArrayElement " << arrayPTS << endl;
         return arrayPTS;
     };
+    CB_GetNativeFunctionArg cb6 = [] (const char* functionName, int index) {
+        cout << "GetNativeFunctionArg " << functionName << "  " << index << endl;
+        return new set<long>();
+    };
+
     ExtendedPAG* e = new ExtendedPAG(svfModule, pag);
 
     e->callback_ReportArgPTSGetReturnPTS = cb1;
@@ -119,34 +124,42 @@ int main(int argc, char **argv) {
     e->callback_GetFieldPTS = cb3;
     e->callback_SetFieldPTS = cb4;
     e->callback_GetArrayElementPTS = cb5;
+    e->callback_GetNativeFunctionArg = cb6;
     int id = 0;
-    auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_bidirectional_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNativeAndReturn");
+    auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_intraprocedural_bidirectional_WriteNativeGlobalVariable_getNativeGlobal");
 
-    set<long> callbasePTS;
-    callbasePTS.insert(666);
+    auto pts = e->processNativeFunction(func, set<long>(), vector<set<long>>());
+
+    for (int x = 0; x < 2; x++) {
+        int p = 1000;
+        for (auto function: svfModule->getFunctionSet()) {
 
 
-    for (auto function : svfModule->getFunctionSet()){
-        
+            //auto function = svfModule->getSVFFunction("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform");
+            //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_unidirectional_NativeIdentityFunction_identity");
+            //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_interprocedural_unidirectional_CAccessJava_ReadJavaFieldFromNative_getMyfield");
 
-        //auto function = svfModule->getSVFFunction("Java_org_libjpegturbo_turbojpeg_TJTransformer_transform");
-        //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_intraprocedural_unidirectional_NativeIdentityFunction_identity");
-        //auto function = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_interprocedural_unidirectional_CAccessJava_ReadJavaFieldFromNative_getMyfield");
+            if (function->getName().find("Java_") == 0) {
+                cout << function->getName() << endl;
+                vector<set<long>> argumentsPTS1;
 
-        if (function->getName().find("Java_") == 0) {
-            cout << function->getName() << endl;
-            vector<set<long>> argumentsPTS1;
+                for (int i = 0; i < function->arg_size() - 2; i++) {
+                    set<long> arg1PTS1;
+                    for (int j = 0; j < x; j++) {
+                        arg1PTS1.insert(++p);
+                    }
+                    argumentsPTS1.push_back(arg1PTS1);
+                }
+                set<long> callbasePTS;
+                for (int j = 0; j < x; j++) {
+                    callbasePTS.insert(++p);
+                }
+                auto pts = e->processNativeFunction(function, callbasePTS, argumentsPTS1);
 
-            for (int i = 0; i < function->arg_size() - 2; i++) {
-                set<long> arg1PTS1;
-                arg1PTS1.insert(1000 + i);
-                argumentsPTS1.push_back(arg1PTS1);
+                cout << pts->size() << endl;
             }
-            auto pts = e->processNativeFunction(function, callbasePTS, argumentsPTS1);
-
-            cout << pts->size() << endl;
         }
-     }
+    }
     /*
     //auto f1 = svfModule->getSVFFunction("llvm_controlflow_interprocedural_interleaved_CallJavaFunctionFromNativeAndReturn_callMyJavaFunctionFromNative");
     auto f1 = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_controlflow_interprocedural_interleaved_RegisterCallback_registerCallbacksAndCall");
@@ -191,7 +204,7 @@ int main(int argc, char **argv) {
     AndersenWaveDiff::releaseAndersenWaveDiff();
     SVFIR::releaseSVFIR();
 
-    LLVMModuleSet::getLLVMModuleSet()->dumpModulesToFile(".svf.bc");
+    //LLVMModuleSet::getLLVMModuleSet()->dumpModulesToFile(".svf.bc");
     SVF::LLVMModuleSet::releaseLLVMModuleSet();
 
     llvm::llvm_shutdown();
