@@ -23,6 +23,8 @@ typedef std::function<std::set<long>*(std::set<long>* callBasePTS, const char * 
 typedef std::function<void(std::set<long>* callBasePTS, const char * className, const char * fieldName, std::set<long>* argPTS)> CB_SetFieldPTS;
 // called at GetObjectArrayElement etc. invoke site
 typedef std::function<std::set<long>*(std::set<long>* arrayPTS)> CB_GetArrayElementPTS;
+// called when the argument to a native function (called from java) is used
+typedef std::function<std::set<long>*(const char * functionName, int index)> CB_GetNativeFunctionArg;
 using namespace SVF;
 
 // this custom implementation adds additional points-to-sets to a PAG before Andersen is performed.
@@ -52,7 +54,7 @@ class ExtendedPAG {
 
 private:
 
-
+    const SVFFunction* currentFunction;
     SVFIR* pag;
     DetectNICalls* detectedJniCalls;
     // these PTS are updated when processNativeFunction is called
@@ -65,6 +67,8 @@ private:
     // map from custom nodeID to dummyObjNode nodeID.
     std::map<long, NodeID> javaAllocNodeToSVFDummyNode;
     std::map<NodeID, long> pagDummyNodeToJavaAllocNode;
+    std::map<NodeID, std::pair<const SVFFunction*, int>* > pagDummyNodeToJavaArgumentNode;
+
 
     std::set<NodeID> registeredJavaAllocSites;
 
@@ -110,6 +114,7 @@ public:
     CB_GetFieldPTS callback_GetFieldPTS;
     CB_SetFieldPTS callback_SetFieldPTS;
     CB_GetArrayElementPTS  callback_GetArrayElementPTS;
+    CB_GetNativeFunctionArg callback_GetNativeFunctionArg;
     SVFModule* module;
 };
 
