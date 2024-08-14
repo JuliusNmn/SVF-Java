@@ -22,5 +22,8 @@ public interface SVFAnalysisListener {
     // called at SetArrayElement. index insensitive
     public void setArrayElement(long[] basePTS, long[] argPTS);
 
+    // called when a value results from an argument of another native function that can be called from Java
+    // function name is always Java_... index ignores JNIEnv and this/class. Index 0 means actual first Call Argument
+    public long[] getNativeFunctionArgument(String functionName, int argIndex);
 
 }

@@ -111,6 +111,12 @@ public class SVFJava {
                 // called at SetArrayElement. index insensitive
                 public void setArrayElement(long[] basePTS, long[] argPTS){
                 }
+
+                public long[] getNativeFunctionArgument(String functionName, int argIndex) {
+                    System.out.println("requesting arg pts for " + functionName + " index " + argIndex);
+                    return new long[]{};
+                }
+
     }
 
     public static void main(String[] args) {

@@ -91,7 +91,8 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
     assert(listenerCallback4);
     jmethodID listenerCallback5 = env->GetMethodID(listenerClass, "getArrayElement", "([J)[J");
     assert(listenerCallback5);
-
+    jmethodID listenerCallback6 = env->GetMethodID(listenerClass, "getNativeFunctionArgument", "(Ljava/lang/String;I)[J");
+    assert(listenerCallback6);
     //jobject listener = env->NewGlobalRef(listenerArg);
     jobject listener = listenerArg;
 
@@ -263,8 +264,28 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
 
         return result;
     };
-    CB_GetNativeFunctionArg cb6 = [](const char* name, int index) {
-        return new set<long>();
+    CB_GetNativeFunctionArg cb6 = [env, listener, listenerCallback6](const char* name, int index) {
+        jstring jMethodName = env->NewStringUTF(name);
+
+        jlongArray resultArray = (jlongArray)env->CallObjectMethod(listener, listenerCallback6, jMethodName, index);
+
+        std::set<long>* result = new std::set<long>();
+
+        if (resultArray != nullptr) {
+
+            jsize length = env->GetArrayLength(resultArray);
+            cout << "returned pts size " << length << " elements: ";
+            jlong* resultElements = env->GetLongArrayElements(resultArray, nullptr);
+            for (int i = 0; i < length; ++i) {
+                result->insert(resultElements[i]);
+                cout << resultElements[i];
+            }
+            cout << ENDL;
+            env->ReleaseLongArrayElements(resultArray, resultElements, 0);
+        }
+        // Release local references
+        env->DeleteLocalRef(jMethodName);
+        return result;
     };
     e->callback_ReportArgPTSGetReturnPTS = cb1;
     e->callback_GenerateNativeAllocSiteId = cb2;
