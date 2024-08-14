@@ -36,6 +36,7 @@ set<long>* ExtendedPAG::processNativeFunction(const SVFFunction* function, set<l
         }
         addPTS(argNode, argPTS);
     }
+    currentFunction = function;
     solve(function);
 
 

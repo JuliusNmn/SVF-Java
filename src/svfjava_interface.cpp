@@ -263,13 +263,15 @@ JNIEXPORT jlongArray JNICALL Java_svfjava_SVFModule_processFunction
 
         return result;
     };
-
+    CB_GetNativeFunctionArg cb6 = [](const char* name, int index) {
+        return new set<long>();
+    };
     e->callback_ReportArgPTSGetReturnPTS = cb1;
     e->callback_GenerateNativeAllocSiteId = cb2;
     e->callback_GetFieldPTS = cb3;
     e->callback_SetFieldPTS = cb4;
     e->callback_GetArrayElementPTS = cb5;
-
+    e->callback_GetNativeFunctionArg = cb6;
     //auto pag = svfg->getPAG();
     //assert(pag);
     //auto args = svfg->getPAG()->getFunArgsList(function);

@@ -87,12 +87,47 @@ void ExtendedPAG::updateAndersen() {
 
 // get PTS for return node / callsite param (+ base) node
 set<long>* ExtendedPAG::getPTS(NodeID node) {
+    JNINativeInterface_ j{};
+    const JNICallOffset offset_NewGlobalRef = (unsigned long) (&j.NewGlobalRef) - (unsigned long) (&j);
+
     auto pts = customAndersen->getPts(node);
     set<long>* javaAllocPTS = new set<long>();
     for (const NodeID allocNode: pts) {
         if (long id = pagDummyNodeToJavaAllocNode[allocNode]){
             javaAllocPTS->insert(id);
+
         }
+        if (std::pair<const char *, int>* funcArg = pagDummyNodeToJavaArgumentNode[allocNode]){
+            if (strcmp(funcArg->first,currentFunction->getName().c_str()) != 0){
+                // only request argument pts for functions other than the one currently being processed
+                set<long>* otherFunctionArgPts = callback_GetNativeFunctionArg(funcArg->first, funcArg->second);
+                javaAllocPTS->insert(otherFunctionArgPts->begin(), otherFunctionArgPts->end());
+            }
+        }
+
+        if (auto getGlobal = jniCallsiteDummyNodes[allocNode]){
+            if (getGlobal->second == offset_NewGlobalRef) {
+                const SVFCallInst* call = SVFUtil::dyn_cast<SVFCallInst>(getGlobal->first);
+                const SVFValue* obj = call->getArgOperand(1);
+                auto argNode = pag->getValueNode(obj);
+                auto pts2 = customAndersen->getPts(argNode);
+                for (const NodeID allocNode2: pts2) {
+                    if (std::pair<const char *, int>* funcArg = pagDummyNodeToJavaArgumentNode[allocNode2]){
+                        if (strcmp(funcArg->first,currentFunction->getName().c_str()) != 0){
+                            // only request argument pts for functions other than the one currently being processed
+                            set<long>* otherFunctionArgPts = callback_GetNativeFunctionArg(funcArg->first, funcArg->second);
+                            javaAllocPTS->insert(otherFunctionArgPts->begin(), otherFunctionArgPts->end());
+                        }
+                    }
+
+                    if (long id = pagDummyNodeToJavaAllocNode[allocNode2]){
+                        javaAllocPTS->insert(id);
+                    }
+
+                }
+            }
+        }
+
         auto pts2 = customAndersen->getPts(allocNode);
         for (const NodeID allocNode2: pts2) {
             if (long id = pagDummyNodeToJavaAllocNode[allocNode2]){

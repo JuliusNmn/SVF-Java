@@ -152,6 +152,7 @@ set<long>* ExtendedPAG::getPTSForField(const llvm::CallBase* getField, Dominator
     } else {
         cout << inst->toString() << endl;
         cout << "failed to get field name for " << inst->toString() << endl;
+        return new set<long>();
     }
 
 
@@ -247,29 +248,6 @@ void ExtendedPAG::runDetector(const SVFFunction* function, set<const SVFFunction
                 set<NodeID> *s = new set<NodeID>();
                 s->insert(dummyNode);
                 additionalPTS[callsiteNode] = s;
-            } else if (offset == offset_NewGlobalRef) {
-                const SVFCallInst* call = SVFUtil::dyn_cast<SVFCallInst>(inst);
-                const SVFValue* obj = call->getArgOperand(1);
-                cout << obj->toString()<<endl;
-                auto baseNode = pag->getValueNode(obj);
-                if (const SVFInstruction*  loadInst = SVFUtil::dyn_cast<SVFInstruction>(obj)) {
-                    cout << loadInst->toString() << endl;
-                    const Value* v = LLVMModuleSet::getLLVMModuleSet()->getLLVMValue(obj);
-                    if (auto l = llvm::dyn_cast<LoadInst>(v)) {
-                        auto pointer = l->getPointerOperand();
-                        auto svfVal = LLVMModuleSet::getLLVMModuleSet()->getSVFValue(pointer);
-                        //baseNode = pag->getValueNode(svfVal);
-                    }
-
-                }
-                NodeID callsiteNode = pag->getValueNode(inst);
-                if (auto e = additionalPTS[callsiteNode]){
-                    e->insert(baseNode);
-                } else {
-                    set<NodeID>* newset = new set<NodeID>();
-                    newset->insert(baseNode);
-                    additionalPTS[callsiteNode] = newset;
-                }
             }
         }
     }

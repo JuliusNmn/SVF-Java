@@ -40,6 +40,23 @@ ExtendedPAG::ExtendedPAG(SVFModule* module, SVFIR* pag): pag(pag) {
         additionalPTS[callsiteNode] = s;
         myfile << call.second << ";" << allCalls[call.second] << ";" << cb->toString() << endl;
     }
+
+    // add dummy nodes for all arguments of Java_ functions
+    for (const auto &svfFunction: *module) {
+        if (svfFunction->getName().find("Java_") == 0) {
+            // add argument dummy nodes for all native functions
+            for (int i = 0; i < svfFunction->arg_size() - 2; i++){
+                auto arg = svfFunction->getArg(i+2);
+                NodeID dummyNode = pag->addDummyObjNode(arg->getType());
+                pagDummyNodeToJavaArgumentNode[dummyNode] = new std::pair<const char *, int>(svfFunction->getName().c_str(), i);
+                NodeID argNode = pag->getValueNode(arg);
+                set<NodeID>* s = new set<NodeID>();
+                s->insert(dummyNode);
+                additionalPTS[argNode] = s;
+            }
+        }
+    }
+
     myfile.close();
     updateAndersen();
 }
