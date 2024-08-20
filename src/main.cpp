@@ -126,9 +126,7 @@ int main(int argc, char **argv) {
     e->callback_GetArrayElementPTS = cb5;
     e->callback_GetNativeFunctionArg = cb6;
     int id = 0;
-    auto func = svfModule->getSVFFunction("Java_org_opalj_fpcf_fixtures_xl_llvm_stateaccess_intraprocedural_bidirectional_WriteNativeGlobalVariable_getNativeGlobal");
 
-    auto pts = e->processNativeFunction(func, set<long>(), vector<set<long>>());
 
     for (int x = 0; x < 2; x++) {
         int p = 1000;
